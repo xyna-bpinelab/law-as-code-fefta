@@ -274,7 +274,8 @@ class SubItemMatch:
 
 def classify_subitems(client, product_description: str, subitems: list[SubItem],
                        stage1_row_matches: Optional[dict] = None,
-                       threshold: float = 0.5, model: Optional[str] = None) -> list[SubItemMatch]:
+                       threshold: float = 0.5, model: Optional[str] = None,
+                       ministerial_spec_text: Optional[str] = None) -> list[SubItemMatch]:
     """号単位でJev(Noul)に独立して問い合わせ、除外節（hard_rule）で
     機械的に抑制できるものは抑制した上で、確率降順に返す。
 
@@ -288,6 +289,12 @@ def classify_subitems(client, product_description: str, subitems: list[SubItem],
         threshold: 「該当」とみなす確率閾値。excludes_rows/excludes_self_items
             の抑制判定にも同じ閾値を用いる。
         model: TypeSafeのモデル名（省略時は既定）。
+        ministerial_spec_text: 貨物等省令の対応条文全文
+            （ministerial_spec_lookup.find_spec_for_row() で取得）。
+            別表第一の号テキストだけでは「経済産業省令で定める仕様のもの」
+            という委任先の具体的な数値基準（周波数・耐熱温度等）が分から
+            ないため、指定した場合はJevへのstateに含めて判定材料とする。
+            省略時は別表の号テキストのみで判定する（従来動作）。
 
     Returns:
         probability 降順の SubItemMatch のリスト。
@@ -297,18 +304,29 @@ def classify_subitems(client, product_description: str, subitems: list[SubItem],
     questions = {}
     for it in subitems:
         key = f"item_{it.item_id}"
+        instructions = (
+            f"次の製品・技術の説明は、下記の号（項の一部）が定める貨物・技術に該当するか。\n"
+            f"【{it.label}】{it.text}"
+        )
+        if ministerial_spec_text:
+            instructions += (
+                "\n\nなお、この項は「経済産業省令で定める仕様のもの」という要件を含む場合があり、"
+                "その具体的な数値基準はstateの ministerial_order_spec に記載されている。"
+                "該当する記述があれば必ず参照して判定すること。"
+            )
         questions[key] = Noul(
-            instructions=(
-                f"次の製品・技術の説明は、下記の号（項の一部）が定める貨物・技術に該当するか。\n"
-                f"【{it.label}】{it.text}"
-            ),
+            instructions=instructions,
             criteria={
                 "true": f"製品説明が{it.label}の規定する範囲に含まれる",
                 "false": f"製品説明は{it.label}の規定する範囲に含まれない",
             },
         )
 
-    kwargs = {"state": {"product_description": product_description}, "questions": questions}
+    state: dict = {"product_description": product_description}
+    if ministerial_spec_text:
+        state["ministerial_order_spec"] = ministerial_spec_text
+
+    kwargs = {"state": state, "questions": questions}
     if model:
         kwargs["model"] = model
     response = client.system_one(**kwargs)
