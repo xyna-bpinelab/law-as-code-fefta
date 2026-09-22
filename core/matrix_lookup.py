@@ -81,6 +81,7 @@ class MatrixEntry:
     item_text: str           # 列1の値（号の本文）
     ministerial_refs: list[str] = field(default_factory=list)  # 列2（条文番号）の一覧
     ministerial_text: str = ""                                  # 列3を連結したテキスト
+    ministerial_lines: list[str] = field(default_factory=list)  # 列3の行単位（イ/ロ/ハ等の枝ごと）
     terms: list[tuple[str, str]] = field(default_factory=list)  # (用語, 解釈)
     eccn: list[str] = field(default_factory=list)
 
@@ -91,6 +92,7 @@ class MatrixEntry:
             "item_text": self.item_text,
             "ministerial_refs": self.ministerial_refs,
             "ministerial_text": self.ministerial_text,
+            "ministerial_lines": self.ministerial_lines,
             "terms": [{"term": t, "definition": d} for t, d in self.terms],
             "eccn": self.eccn,
         }
@@ -153,6 +155,7 @@ def load_matrix_entries(xlsx_path: Path, row_id: str) -> list[MatrixEntry]:
         entries.append(MatrixEntry(
             row_id=row_id, item_id=item_id, label=label, item_text=str(item_text).replace("\n", ""),
             ministerial_refs=ministerial_refs, ministerial_text="".join(ministerial_parts),
+            ministerial_lines=ministerial_parts,
             terms=terms, eccn=eccn,
         ))
 

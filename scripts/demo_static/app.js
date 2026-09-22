@@ -14,11 +14,21 @@ const stage2Status = document.getElementById("stage2Status");
 const stage2Error = document.getElementById("stage2Error");
 const stage2Results = document.getElementById("stage2Results");
 
+const stage3Panel = document.getElementById("stage3Panel");
+const stage3Title = document.getElementById("stage3Title");
+const stage3Status = document.getElementById("stage3Status");
+const stage3Error = document.getElementById("stage3Error");
+const stage3Results = document.getElementById("stage3Results");
+const stage3Verdict = document.getElementById("stage3Verdict");
+
 let selectedRowLabel = null;
 let lastStage1Matches = [];
 let lastThreshold = 0.5;
 let currentStage2Subitems = [];
 let currentStage2Threshold = 0.5;
+let currentStage3Criteria = [];
+let currentStage3ItemId = null;
+let stage3CombineMode = "OR";
 
 function setStatus(el, text) {
   if (!text) {
@@ -166,6 +176,13 @@ function renderNecessaryConditionRow(m, threshold) {
     tag.textContent = "該当候補";
     row.appendChild(tag);
   }
+
+  const specBtn = document.createElement("button");
+  specBtn.className = "spec-link";
+  specBtn.textContent = "Stage3: 仕様を入力して判定 →";
+  specBtn.addEventListener("click", () => runStage3(m.item_id));
+  row.appendChild(specBtn);
+
   return row;
 }
 
@@ -254,6 +271,7 @@ async function runStage2(rowLabel) {
   renderStage1(lastStage1Matches, lastThreshold);
 
   setError(stage2Error, null);
+  stage3Panel.hidden = true;
   stage2Panel.hidden = false;
   stage2Title.textContent = `Stage2 — ${rowLabel}の項 を号単位で判定`;
   stage2Results.innerHTML = "";
@@ -271,14 +289,214 @@ async function runStage2(rowLabel) {
   }
 }
 
+const COMPARATOR_TEXT = { ">=": "以上", "<=": "以下", ">": "を超える", "<": "未満" };
+const COMPARATOR_SYMBOL = { ">=": "≥", "<=": "≤", ">": ">", "<": "<" };
+
+function findStage2Item(itemId) {
+  return (currentStage2Subitems || []).find((s) => s.item_id === itemId) || null;
+}
+
+async function runStage3(itemId) {
+  if (!selectedRowLabel) return;
+  currentStage3ItemId = itemId;
+
+  setError(stage3Error, null);
+  stage3Panel.hidden = false;
+  stage3Results.innerHTML = "";
+  stage3Verdict.innerHTML = "";
+  setStatus(stage3Status, `${itemId}号の数値仕様条件を条文から抽出中...`);
+  stage3Panel.scrollIntoView({ behavior: "smooth", block: "nearest" });
+
+  try {
+    const data = await postJson("/api/stage3", { row_label: selectedRowLabel, item_id: itemId });
+    stage3Title.textContent = `Stage3 — ${data.label}（${data.item_id}）の数値仕様を入力`;
+    currentStage3Criteria = (data.criteria || []).map((c, idx) => ({ ...c, id: idx, userValue: null, metState: null }));
+    renderStage3();
+  } catch (e) {
+    setError(stage3Error, "抽出に失敗しました: " + e.message);
+  } finally {
+    setStatus(stage3Status, null);
+  }
+}
+
+function requirementText(c) {
+  const symbol = COMPARATOR_SYMBOL[c.comparator] || c.comparator;
+  const unit = c.unit ? ` ${escapeHtml(c.unit)}` : "";
+  return `条文の基準: <strong>${symbol} ${c.threshold}${unit}</strong>（${escapeHtml(c.matched_text || "")}）`;
+}
+
+function renderStage3() {
+  stage3Results.innerHTML = "";
+
+  if (currentStage3Criteria.length === 0) {
+    stage3Results.innerHTML = `<div class="empty">この号には機械抽出可能な数値仕様条件が見つかりませんでした。Stage2の判定のみで確定です。</div>`;
+    renderStage3Verdict();
+    return;
+  }
+
+  for (const c of currentStage3Criteria) {
+    const card = document.createElement("div");
+    card.className = "criterion-card";
+
+    const rawLine = document.createElement("div");
+    rawLine.className = "raw-line";
+    rawLine.textContent = c.raw_line;
+    card.appendChild(rawLine);
+
+    const inputRow = document.createElement("div");
+    inputRow.className = "criterion-input-row";
+
+    if (c.resolved) {
+      inputRow.innerHTML = `
+        <span class="param-label">${escapeHtml(c.parameter_label || "数値条件")}</span>
+        <input type="number" step="any" placeholder="実測値">
+        <span class="criterion-req">${requirementText(c)}</span>
+      `;
+      const input = inputRow.querySelector("input");
+      input.addEventListener("input", () => {
+        const v = input.value === "" ? null : parseFloat(input.value);
+        c.userValue = v;
+        c.metState = evaluateNumericCriterion(c, v);
+        updateVerdictBadge(card, c);
+        renderStage3Verdict();
+      });
+    } else {
+      inputRow.innerHTML = `
+        <span class="param-label">この条件に該当するか（原文参照）</span>
+        <span class="bool-toggle">
+          <button data-v="yes">該当する</button>
+          <button data-v="no">該当しない</button>
+        </span>
+      `;
+      const buttons = inputRow.querySelectorAll(".bool-toggle button");
+      buttons.forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const isYes = btn.dataset.v === "yes";
+          c.userValue = isYes;
+          c.metState = isYes;
+          buttons.forEach((b) => b.classList.remove("active", "yes", "no"));
+          btn.classList.add("active", isYes ? "yes" : "no");
+          updateVerdictBadge(card, c);
+          renderStage3Verdict();
+        });
+      });
+    }
+
+    const verdictSpan = document.createElement("span");
+    verdictSpan.className = "criterion-verdict pending";
+    verdictSpan.textContent = "未入力";
+    inputRow.appendChild(verdictSpan);
+
+    card.appendChild(inputRow);
+    stage3Results.appendChild(card);
+  }
+
+  renderStage3Verdict();
+}
+
+function evaluateNumericCriterion(c, value) {
+  if (value === null || Number.isNaN(value)) return null;
+  if (c.comparator === ">=") return value >= c.threshold;
+  if (c.comparator === "<=") return value <= c.threshold;
+  if (c.comparator === ">") return value > c.threshold;
+  if (c.comparator === "<") return value < c.threshold;
+  return null;
+}
+
+function updateVerdictBadge(card, c) {
+  const badge = card.querySelector(".criterion-verdict");
+  if (c.metState === null) {
+    badge.className = "criterion-verdict pending";
+    badge.textContent = "未入力";
+  } else if (c.metState) {
+    badge.className = "criterion-verdict met";
+    badge.textContent = "条件を満たす";
+  } else {
+    badge.className = "criterion-verdict unmet";
+    badge.textContent = "条件を満たさない";
+  }
+}
+
+function combineResults(criteria, mode) {
+  if (criteria.length === 0) return true;
+  const vals = criteria.map((c) => c.metState);
+  if (mode === "OR") {
+    if (vals.some((v) => v === true)) return true;
+    if (vals.every((v) => v === false)) return false;
+    return null;
+  }
+  // AND
+  if (vals.some((v) => v === false)) return false;
+  if (vals.every((v) => v === true)) return true;
+  return null;
+}
+
+function renderStage3Verdict() {
+  const box = document.createElement("div");
+
+  const modeRow = document.createElement("div");
+  modeRow.className = "row";
+  modeRow.innerHTML = `
+    <span class="hint">号内の複数条件の関係（原文からは自動判定できません）:</span>
+    <button class="ghost" data-mode="OR">いずれか1つに該当（OR・既定）</button>
+    <button class="ghost" data-mode="AND">すべてに該当（AND）</button>
+  `;
+  modeRow.querySelectorAll("button").forEach((btn) => {
+    if (btn.dataset.mode === stage3CombineMode) btn.style.borderColor = "var(--accent)";
+    btn.addEventListener("click", () => {
+      stage3CombineMode = btn.dataset.mode;
+      renderStage3Verdict();
+    });
+  });
+
+  const specResult = combineResults(currentStage3Criteria, stage3CombineMode);
+  const stage2Item = findStage2Item(currentStage3ItemId);
+  const stage2Hit = !!stage2Item && stage2Item.probability >= currentStage2Threshold && !stage2Item.suppressed;
+
+  let overall, headline, cls;
+  if (specResult === null) {
+    overall = "pending";
+    cls = "pending";
+    headline = "未確定（すべての条件に回答してください）";
+  } else if (stage2Hit && specResult === true) {
+    cls = "hit";
+    headline = "該当（規制対象の可能性）";
+  } else {
+    cls = "miss";
+    headline = "非該当";
+  }
+
+  const answeredCount = currentStage3Criteria.filter((c) => c.metState !== null).length;
+  const specText = specResult === null ? "未確定" : (specResult ? "条件を満たす" : "条件を満たさない");
+
+  const verdictBox = document.createElement("div");
+  verdictBox.className = `final-verdict-box ${cls}`;
+  verdictBox.innerHTML = `
+    <div class="headline">${headline}</div>
+    <div class="detail">
+      Stage2判定: ${stage2Item ? Math.round(stage2Item.probability * 100) + "%" + (stage2Item.suppressed ? "（除外規定により抑制）" : "") : "―"}
+      ／ 数値仕様（${stage3CombineMode === "OR" ? "OR" : "AND"}想定）: ${specText}
+      （${answeredCount}/${currentStage3Criteria.length}件に回答済み）
+    </div>
+  `;
+
+  stage3Verdict.innerHTML = "";
+  stage3Verdict.appendChild(modeRow);
+  stage3Verdict.appendChild(verdictBox);
+}
+
 runBtn.addEventListener("click", runStage1);
 clearBtn.addEventListener("click", () => {
   descriptionEl.value = "";
   stage1Panel.hidden = true;
   stage2Panel.hidden = true;
+  stage3Panel.hidden = true;
   setError(stage1Error, null);
   setError(stage2Error, null);
+  setError(stage3Error, null);
   selectedRowLabel = null;
+  currentStage3Criteria = [];
+  currentStage3ItemId = null;
 });
 descriptionEl.addEventListener("keydown", (e) => {
   if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {

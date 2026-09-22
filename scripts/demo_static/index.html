@@ -184,6 +184,81 @@
 
   .empty { font-size: 13px; color: var(--text-dim); padding: 20px 0; text-align: center; }
 
+  .item-row.expandable { cursor: pointer; }
+  .item-row.expandable:hover { background: var(--code-bg); }
+  .spec-link {
+    font-size: 12px;
+    color: var(--accent);
+    background: none;
+    border: none;
+    padding: 2px 0 2px 8px;
+    cursor: pointer;
+    text-decoration: underline;
+    flex-shrink: 0;
+  }
+  .spec-link:disabled { opacity: 0.4; cursor: default; text-decoration: none; }
+
+  .criterion-card {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 12px;
+    margin-bottom: 10px;
+  }
+  .criterion-card .raw-line {
+    font-size: 12px;
+    color: var(--text-dim);
+    line-height: 1.5;
+    margin-bottom: 8px;
+  }
+  .criterion-card .param-label { font-weight: 700; font-size: 13px; margin-right: 6px; }
+  .criterion-input-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .criterion-input-row input[type="number"] {
+    width: 110px;
+    padding: 6px 8px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--bg);
+    color: var(--text);
+    font-size: 13px;
+  }
+  .criterion-req { font-size: 12.5px; color: var(--text-dim); }
+  .criterion-req strong { color: var(--text); }
+  .bool-toggle { display: flex; gap: 6px; }
+  .bool-toggle button {
+    background: var(--code-bg);
+    color: var(--text-dim);
+    padding: 5px 12px;
+    font-size: 12.5px;
+    border: 1px solid var(--border);
+  }
+  .bool-toggle button.active.yes { background: var(--ok-bg); color: var(--ok); border-color: var(--ok); }
+  .bool-toggle button.active.no { background: var(--accent-bg); color: var(--accent); border-color: var(--accent); }
+  .criterion-verdict { margin-left: auto; font-size: 12px; font-weight: 700; }
+  .criterion-verdict.met { color: var(--ok); }
+  .criterion-verdict.unmet { color: var(--accent); }
+  .criterion-verdict.pending { color: var(--text-dim); font-weight: 400; }
+
+  .final-verdict-box {
+    border-radius: 10px;
+    padding: 16px;
+    margin-top: 14px;
+    text-align: center;
+  }
+  .final-verdict-box.pending { background: var(--code-bg); color: var(--text-dim); }
+  .final-verdict-box.hit { background: var(--ok-bg); color: var(--ok); }
+  .final-verdict-box.miss { background: var(--accent-bg); color: var(--accent); }
+  .final-verdict-box .headline { font-size: 16px; font-weight: 700; margin-bottom: 4px; }
+  .final-verdict-box .detail { font-size: 12px; opacity: 0.85; line-height: 1.6; }
+  .stage3-disclaimer {
+    font-size: 12px;
+    color: var(--text-dim);
+    background: var(--code-bg);
+    border-radius: 8px;
+    padding: 10px 12px;
+    margin-bottom: 14px;
+    line-height: 1.6;
+  }
+
   @media (max-width: 560px) {
     .bar-row { grid-template-columns: 60px 1fr 46px; }
     .cond-label { min-width: 48px; }
@@ -226,6 +301,19 @@
     <div id="stage2Status" class="status" hidden></div>
     <div id="stage2Error" class="error-box" hidden></div>
     <div id="stage2Results"></div>
+  </div>
+
+  <div class="panel" id="stage3Panel" hidden>
+    <h2 id="stage3Title">Stage3 — 数値仕様を入力して最終判定</h2>
+    <div class="stage3-disclaimer">
+      別表条文・貨物等省令の条文から数値基準（周波数・温度等の「〜以上」「〜を超える」等）を機械的に抽出しています。
+      条件間の論理関係（すべて満たす必要があるか／いずれか1つでよいか）は原文からは自動判定できないため、
+      両方の解釈での結果を参考として示します。数値化できなかった条件は原文を読んでご自身で該当・非該当を選択してください。
+    </div>
+    <div id="stage3Status" class="status" hidden></div>
+    <div id="stage3Error" class="error-box" hidden></div>
+    <div id="stage3Results"></div>
+    <div id="stage3Verdict"></div>
   </div>
 </div>
 <script src="/app.js"></script>

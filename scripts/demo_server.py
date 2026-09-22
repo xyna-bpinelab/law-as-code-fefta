@@ -23,6 +23,12 @@ API:
            （kamotsu_matrix_*.xlsx）から号ごとに正確対応付けられた
            貨物等省令の条文・用語解釈を判定材料に加えた、実際の
            該非判定結果を返す
+    POST /api/stage3  {"row_label": "九", "item_id": "1"}
+        -> 指定の号の条文（別表本文＋貨物等省令の対応条文）から、
+           数値仕様の判定条件（周波数・温度等の閾値）を機械的に抽出し、
+           ユーザーが実測値を入力するための質問項目を返す（TypeSafe
+           API呼び出し不要。純粋な正規表現ベースの抽出）。最終的な
+           該非判定（各条件を満たすか）はブラウザ側で計算する。
 """
 
 from __future__ import annotations
@@ -38,8 +44,9 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
 from core.list_classifier import classify_item, load_table_rows  # noqa: E402
-from core.matrix_lookup import load_matrix_entries  # noqa: E402
+from core.matrix_lookup import find_entry, load_matrix_entries  # noqa: E402
 from core.predicate_extractor import classify_subitems, extract_subitems  # noqa: E402
+from core.spec_extractor import extract_spec_criteria  # noqa: E402
 
 XML_PATH = REPO_ROOT / "jurisdictions/jp/raw/cabinet_orders/324CO0000000378_20260605_令和八年政令第百九十四号.xml"
 MATRIX_XLSX_PATH = REPO_ROOT / "jurisdictions/jp/raw/matrix/kamotsu_matrix_20260214.xlsx"
@@ -131,6 +138,8 @@ class Handler(BaseHTTPRequestHandler):
                 self._handle_stage1(payload)
             elif path == "/api/stage2":
                 self._handle_stage2(payload)
+            elif path == "/api/stage3":
+                self._handle_stage3(payload)
             else:
                 self.send_error(404)
         except Exception as e:  # noqa: BLE001
@@ -191,6 +200,41 @@ class Handler(BaseHTTPRequestHandler):
             "matrix_spec_item_count": matrix_spec_count,
             "matrix_term_count": matrix_term_count,
             "subitems": [m.to_dict() for m in matches],
+        })
+
+    def _handle_stage3(self, payload: dict):
+        row_label = (payload.get("row_label") or "").strip()
+        item_id = (payload.get("item_id") or "").strip()
+        if not row_label or not item_id:
+            self._send_json({"error": "row_label と item_id は必須です"}, 400)
+            return
+
+        subitems = extract_subitems(XML_PATH, row_label=row_label)
+        subitem = next((s for s in subitems if s.item_id == item_id), None)
+        if subitem is None:
+            self._send_json({"error": f"{row_label}の項 に号 item_id={item_id} が見つかりません"}, 404)
+            return
+
+        row_id = get_row_id_by_label(row_label)
+        matrix_entries = load_matrix_entries(MATRIX_XLSX_PATH, row_id) if row_id else []
+        matrix_entry = find_entry(matrix_entries, item_id)
+
+        # 別表条文本文（一文として）＋ 貨物等省令の対応条文（枝番ごとの行）
+        # の両方から数値仕様条件を抽出する。前者は委任なしで別表自体に
+        # 数値基準が書かれているケース、後者は「経済産業省令で定める
+        # 仕様のもの」に委任されているケースをカバーする。
+        source_lines = [subitem.text]
+        if matrix_entry is not None:
+            source_lines.extend(matrix_entry.ministerial_lines)
+        criteria = extract_spec_criteria(source_lines)
+
+        self._send_json({
+            "row_label": row_label,
+            "item_id": item_id,
+            "label": subitem.label,
+            "item_text": subitem.text,
+            "ministerial_refs": matrix_entry.ministerial_refs if matrix_entry else [],
+            "criteria": [c.to_dict() for c in criteria],
         })
 
 
