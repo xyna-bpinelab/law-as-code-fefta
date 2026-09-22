@@ -1,0 +1,142 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "tree_id": "jp_fefta_inclusive_license_decision_tree",
+  "title": "日本安全保障貿易管理 包括許可区分判定ナレッジツリー",
+  "version": "1.0.0",
+  "target_jurisdiction": "JP",
+  "nodes": {
+    "root": {
+      "id": "N000_START",
+      "description": "リスト規制該当性の事前評価完了後の包括許可判定ルート",
+      "evaluator": "hard_rule",
+      "condition": "item.is_list_controlled == true",
+      "next": {
+        "true": "N100_VERY_SENSITIVE_CHECK",
+        "false": "RESULT_NOT_LIST_CONTROLLED"
+      }
+    },
+    "N100_VERY_SENSITIVE_CHECK": {
+      "id": "N100_VERY_SENSITIVE_CHECK",
+      "title": "Very Sensitive List（告示貨物・告示技術）の判定",
+      "legal_basis": [
+        "平成13年経済産業省告示第838号（告示貨物）",
+        "役務取引許可指導要領 別紙（告示技術）"
+      ],
+      "evaluator": "hard_rule",
+      "check_property": "item.is_kokushi_kawamono",
+      "next": {
+        "true": "RESULT_INDIVIDUAL_LICENSE_REQUIRED_VERY_SENSITIVE",
+        "false": "N200_SENSITIVE_CHECK"
+      }
+    },
+    "N200_SENSITIVE_CHECK": {
+      "id": "N200_SENSITIVE_CHECK",
+      "title": "Sensitive List（高感度品目・一般包括除外）の判定",
+      "legal_basis": [
+        "包括輸出許可取扱要領 別表",
+        "包括役務取引許可取扱要領 別表"
+      ],
+      "evaluator": "hard_rule",
+      "check_property": "item.is_sensitive_list",
+      "next": {
+        "true": "N300_SPECIAL_GENERAL_CHECK",
+        "false": "N400_GENERAL_LICENSE_CHECK"
+      }
+    },
+    "N300_SPECIAL_GENERAL_CHECK": {
+      "id": "N300_SPECIAL_GENERAL_CHECK",
+      "title": "特別一般包括許可の適用要件判定",
+      "legal_basis": [
+        "包括輸出許可取扱要領 第2の(2)",
+        "輸出貿易管理令 第4条第1項第3号"
+      ],
+      "evaluator": "hybrid_jev",
+      "jev_context_prompt": "企業が特別一般包括許可を保持しており、かつ取引先が非懸念国・非懸念顧客であることを評価します。",
+      "conditions": [
+        "company.has_special_general_license == true",
+        "destination.is_embargoed_country == false",
+        "transaction.is_suspicious == false"
+      ],
+      "next": {
+        "true": "RESULT_SPECIAL_GENERAL_LICENSE_APPLICABLE",
+        "false": "RESULT_INDIVIDUAL_LICENSE_REQUIRED_SENSITIVE"
+      }
+    },
+    "N400_GENERAL_LICENSE_CHECK": {
+      "id": "N400_GENERAL_LICENSE_CHECK",
+      "title": "一般包括許可の適用要件判定",
+      "legal_basis": [
+        "包括輸出許可取扱要領 第2の(1)",
+        "輸出貿易管理令 第4条第1項第3号イ"
+      ],
+      "evaluator": "hard_rule",
+      "conditions": [
+        "company.has_registered_cp == true",
+        "destination.is_group_a_country == true"
+      ],
+      "next": {
+        "true": "RESULT_GENERAL_LICENSE_APPLICABLE",
+        "false": "N500_SPECIFIC_GENERAL_CHECK"
+      }
+    },
+    "N500_SPECIFIC_GENERAL_CHECK": {
+      "id": "N500_SPECIFIC_GENERAL_CHECK",
+      "title": "特定包括許可の適用要件判定",
+      "legal_basis": [
+        "包括輸出許可取扱要領 第2の(3)"
+      ],
+      "evaluator": "hybrid_jev",
+      "conditions": [
+        "transaction.is_continuous_business == true",
+        "destination.is_permitted_region_for_specific == true"
+      ],
+      "next": {
+        "true": "RESULT_SPECIFIC_INCLUSIVE_LICENSE_APPLICABLE",
+        "false": "RESULT_INDIVIDUAL_LICENSE_REQUIRED"
+      }
+    }
+  },
+  "results": {
+    "RESULT_NOT_LIST_CONTROLLED": {
+      "license_type": "NONE_LIST",
+      "description": "リスト規制非該当（キャッチオール規制の判定へ移行）",
+      "requires_individual_application": false
+    },
+    "RESULT_INDIVIDUAL_LICENSE_REQUIRED_VERY_SENSITIVE": {
+      "license_type": "INDIVIDUAL_REQUIRED",
+      "reason": "告示貨物・告示技術（Very Sensitive List）に該当するため、一切の包括許可が適用できません。",
+      "legal_basis": "平成13年経済産業省告示第838号",
+      "requires_individual_application": true
+    },
+    "RESULT_INDIVIDUAL_LICENSE_REQUIRED_SENSITIVE": {
+      "license_type": "INDIVIDUAL_REQUIRED",
+      "reason": "Sensitive List該当品目であり、特別一般包括許可を保持していないため個別許可が必要です。",
+      "legal_basis": "包括輸出許可取扱要領 別表",
+      "requires_individual_application": true
+    },
+    "RESULT_SPECIAL_GENERAL_LICENSE_APPLICABLE": {
+      "license_type": "SPECIAL_GENERAL",
+      "description": "特別一般包括許可の適用が可能です。",
+      "legal_basis": "包括輸出許可取扱要領 第2の(2)",
+      "requires_individual_application": false
+    },
+    "RESULT_GENERAL_LICENSE_APPLICABLE": {
+      "license_type": "GENERAL_INCLUSIVE",
+      "description": "一般包括許可の適用が可能です（グループA国向け・CP届出済）。",
+      "legal_basis": "包括輸出許可取扱要領 第2の(1)",
+      "requires_individual_application": false
+    },
+    "RESULT_SPECIFIC_INCLUSIVE_LICENSE_APPLICABLE": {
+      "license_type": "SPECIFIC_INCLUSIVE",
+      "description": "特定包括許可の適用が可能です（特定継続取引・子会社等向け）。",
+      "legal_basis": "包括輸出許可取扱要領 第2の(3)",
+      "requires_individual_application": false
+    },
+    "RESULT_INDIVIDUAL_LICENSE_REQUIRED": {
+      "license_type": "INDIVIDUAL_REQUIRED",
+      "reason": "包括許可のいずれの要件も満たさないため、個別許可申請が必要です。",
+      "legal_basis": "外為法第48条第1項",
+      "requires_individual_application": true
+    }
+  }
+}
