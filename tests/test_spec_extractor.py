@@ -1,6 +1,11 @@
 import unittest
 
-from core.spec_extractor import evaluate_criterion, extract_spec_criteria
+from core.spec_extractor import (
+    build_clause_tree,
+    detect_combinator,
+    evaluate_criterion,
+    extract_spec_criteria,
+)
 
 
 class TestExtractSpecCriteria(unittest.TestCase):
@@ -96,6 +101,101 @@ class TestEvaluateCriterion(unittest.TestCase):
         self.assertTrue(evaluate_criterion(c, True))
         self.assertFalse(evaluate_criterion(c, False))
         self.assertIsNone(evaluate_criterion(c, None))
+
+
+class TestDetectCombinator(unittest.TestCase):
+    def test_izureka_is_or(self):
+        self.assertEqual(detect_combinator("次のイからホまでのいずれかに該当するもの"), "OR")
+
+    def test_subete_is_and(self):
+        self.assertEqual(detect_combinator("次の１から３までの全てに該当するもの"), "AND")
+        self.assertEqual(detect_combinator("次の一から四までのすべてに該当する線形増幅器を用いたもの"), "AND")
+
+    def test_oyobi_without_mataha_is_and(self):
+        self.assertEqual(detect_combinator("次の１及び２に該当するもの"), "AND")
+
+    def test_mataha_without_oyobi_is_or(self):
+        self.assertEqual(detect_combinator("次の（一）又は（二）に該当するもの"), "OR")
+
+    def test_ambiguous_both_particles_returns_none(self):
+        self.assertIsNone(detect_combinator(
+            "次のイ及びロに該当するもの又はその部分品"
+        ))
+
+    def test_no_signal_returns_none(self):
+        self.assertIsNone(detect_combinator("零下５５度より低い温度で使用することができるように設計したもの"))
+
+
+class TestBuildClauseTree(unittest.TestCase):
+    def test_flat_kana_siblings_no_lead_sentence(self):
+        lines = [
+            "イ　核爆発による過渡的な電子的効果を防止することができるように設計したもの",
+            "ロ　ガンマ線による影響を防止することができるように設計したもの",
+            "ハ　零下５５度より低い温度で使用することができるように設計したもの",
+        ]
+        tree = build_clause_tree(lines)
+        self.assertEqual(len(tree), 3)
+        self.assertEqual([n.marker for n in tree], ["イ", "ロ", "ハ"])
+        self.assertEqual(tree[2].own_criteria[0].threshold, -55.0)
+        for n in tree:
+            self.assertEqual(n.children, [])
+
+    def test_lead_sentence_with_or_children(self):
+        lines = [
+            "伝送通信装置又はその部分品若しくは附属品であって、次のいずれかに該当するもの",
+            "イ　　無線送信機又は無線受信機であって、次のいずれかに該当するもの",
+            "ロ　デジタル信号処理機能を有するものであって、符号化速度が７００ビット毎秒未満のもの",
+        ]
+        tree = build_clause_tree(lines)
+        self.assertEqual(len(tree), 1)
+        root = tree[0]
+        self.assertIsNone(root.marker)
+        self.assertEqual(root.combinator, "OR")
+        self.assertEqual(len(root.children), 2)
+        self.assertEqual([c.marker for c in root.children], ["イ", "ロ"])
+        self.assertEqual(root.children[1].own_criteria[0].threshold, 700.0)
+
+    def test_nested_and_group_under_paren_marker(self):
+        lines = [
+            "（一）　　1．5メガヘルツ以上87.5メガヘルツ以下の周波数範囲で使用することができるものであって、次の1及び2に該当するもの",
+            "　　　　1　最適送信周波数を自動的に予測及び選択することができるもの",
+            "　　　　2　次の一から四までのすべてに該当する線形増幅器を用いたもの",
+            "　　　　　一　2つ以上の信号を同時に増幅することができるもの",
+            "　　　　　二　1オクターブ以上の瞬時帯域幅を有するもの",
+        ]
+        tree = build_clause_tree(lines)
+        self.assertEqual(len(tree), 1)
+        paren_node = tree[0]
+        self.assertEqual(paren_node.marker, "（一）")
+        self.assertEqual(paren_node.combinator, "AND")
+        self.assertEqual(len(paren_node.children), 2)
+        item2 = paren_node.children[1]
+        self.assertEqual(item2.marker, "2")
+        self.assertEqual(item2.combinator, "AND")
+        self.assertEqual(len(item2.children), 2)
+        self.assertEqual([c.marker for c in item2.children], ["一", "二"])
+
+    def test_repealed_and_annotation_lines_excluded(self):
+        lines = [
+            "＊対応する貨物等省令は、第８条第１項第一号及び第二号",
+            "削除",
+            "（削る）",
+            "イ　実体のある行",
+        ]
+        tree = build_clause_tree(lines)
+        self.assertEqual(len(tree), 1)
+        self.assertEqual(tree[0].marker, "イ")
+
+    def test_to_dict_round_trips_nested_structure(self):
+        lines = [
+            "伝送通信装置であって、次のいずれかに該当するもの",
+            "イ　テスト条件",
+        ]
+        tree = build_clause_tree(lines)
+        d = tree[0].to_dict()
+        self.assertEqual(d["combinator"], "OR")
+        self.assertEqual(len(d["children"]), 1)
+        self.assertEqual(d["children"][0]["marker"], "イ")
 
 
 if __name__ == "__main__":

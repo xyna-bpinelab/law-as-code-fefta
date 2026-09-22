@@ -24,10 +24,13 @@ raw_exclusion/needs_manual_review と同じ設計方針）。
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional
 
-__all__ = ["SpecCriterion", "extract_spec_criteria", "evaluate_criterion"]
+__all__ = [
+    "SpecCriterion", "extract_spec_criteria", "evaluate_criterion",
+    "ClauseNode", "build_clause_tree", "detect_combinator",
+]
 
 _KANJI_DIGIT_MAP = {"〇": 0, "一": 1, "二": 2, "三": 3, "四": 4,
                      "五": 5, "六": 6, "七": 7, "八": 8, "九": 9}
@@ -212,6 +215,140 @@ def extract_spec_criteria(lines: list[str]) -> list[SpecCriterion]:
             continue
         criteria.extend(_extract_from_line(line))
     return criteria
+
+
+
+# --- 号内の複数条件の論理構造（AND/OR）の自動検出 ------------------------
+#
+# 貨物等省令の条文は「次のイからホまでのいずれかに該当するもの」（OR）
+# 「次の１及び２に該当するもの」（AND、"及び"は連言）「次の１から３まで
+# の全てに該当するもの」（AND）のように、列挙リストを導入する文（lead
+# sentence）自体にAND/ORの手がかりが含まれている。この関係性はリスト内の
+# 各行を独立した条件として並べるだけでは失われるため、lead sentence と
+# それに続く枝番（イロハ、（一）（二）、１２３、一二三、と法令文では
+# 深さに応じて記号が循環する）を字下げ（インデント）から木構造として
+# 復元し、各グループの結合子をlead sentenceの文言から自動検出する。
+
+_OR_SIGNAL_RE = re.compile(r'いずれかに(?:該当|掲げる)|いずれか(?:1つ|一つ)')
+_AND_SIGNAL_RE = re.compile(r'の(?:全て|すべて)(?:に|は|が)?(?:該当|満たす|掲げる)')
+_AND_PARTICLE_RE = re.compile(r'及び')
+_OR_PARTICLE_RE = re.compile(r'又は')
+
+
+def detect_combinator(text: str) -> Optional[str]:
+    """列挙リストを導入する文（lead sentence）の文言から、続く枝番間の
+    論理関係を推定する。判定できない場合はNone（不明）を返す
+    （呼び出し側でユーザーに手動選択させる）。"""
+    if _OR_SIGNAL_RE.search(text):
+        return 'OR'
+    if _AND_SIGNAL_RE.search(text):
+        return 'AND'
+    has_and = bool(_AND_PARTICLE_RE.search(text))
+    has_or = bool(_OR_PARTICLE_RE.search(text))
+    if has_and and not has_or:
+        return 'AND'
+    if has_or and not has_and:
+        return 'OR'
+    return None  # 両方/どちらも出現しない場合は無理に推定しない
+
+
+_IROHA = "イロハニホヘトチリヌルヲワカヨタレソツネナラムウヰノオクヤマケフコエテアサキユメミシヱヒモセス"
+_KANJI_NUM_CHARS = "〇一二三四五六七八九十百千"
+_MARKER_RE = re.compile(
+    rf'^(?:'
+    rf'([{_IROHA}])'
+    rf'|(（[{_KANJI_NUM_CHARS}0-9０-９]{{1,4}}）)'
+    rf'|([{_KANJI_NUM_CHARS}]{{1,3}})'
+    rf'|([0-9０-９]{{1,3}})'
+    rf')[　 ]'
+)
+
+
+def _extract_marker(text: str) -> tuple[Optional[str], str]:
+    m = _MARKER_RE.match(text)
+    if not m:
+        return None, text
+    marker = next(g for g in m.groups() if g is not None)
+    return marker, text[m.end():].strip()
+
+
+def _indent_depth(line: str) -> int:
+    return len(line) - len(line.lstrip('　'))
+
+
+def _effective_depth(line: str) -> int:
+    """字下げに基づく相対的な入れ子レベルを計算する。法令文の最上位階層
+    だけは、lead sentence（枝番なし）とそれに続くイロハ等の列挙項目が
+    どちらも字下げ0で並ぶという特殊な慣行があるため、字下げ0の行に
+    ついては枝番の有無で0（lead）/1（列挙項目）を区別し、字下げ1以上の
+    行についてはそのまま(字下げ量+1)として、常に0/1より深い一貫した
+    順序を保つ。"""
+    indent = _indent_depth(line)
+    if indent == 0:
+        marker, _ = _extract_marker(line)
+        return 0 if marker is None else 1
+    return indent + 1
+
+
+@dataclass
+class ClauseNode:
+    text: str                                # マーカー・字下げを除いた実質テキスト
+    marker: Optional[str] = None             # 枝番ラベル（例: "イ", "（一）", "２"）
+    own_criteria: list[SpecCriterion] = field(default_factory=list)  # この行自体が持つ数値条件（複数可、AND結合）
+    children: list["ClauseNode"] = field(default_factory=list)
+    combinator: Optional[str] = None          # childrenを結ぶ論理関係（'AND'/'OR'/None=不明）
+
+    def to_dict(self) -> dict:
+        return {
+            "text": self.text,
+            "marker": self.marker,
+            "own_criteria": [c.to_dict() for c in self.own_criteria],
+            "combinator": self.combinator,
+            "children": [c.to_dict() for c in self.children],
+        }
+
+
+def build_clause_tree(lines: list[str]) -> list[ClauseNode]:
+    """条文行（号の本文、または貨物等省令の枝番テキスト各行）から、
+    列挙リストの入れ子構造（イロハ→（一）（二）→１２３→一二三、と
+    深さに応じて記号が循環する法令文特有の記法）を字下げから復元し、
+    各グループの結合子（AND/OR）を自動検出したツリーを返す。
+
+    トップレベルのノードが複数ある場合（例: 「AであってBのいずれかに
+    該当するもの」と「Cであって...」のように、1つの号に複数の独立した
+    代替的定義が並ぶ場合）は、既定でOR（いずれか1つに該当すれば足りる）
+    として扱う想定。この結合子はNone（不明）としてノードには持たせず、
+    呼び出し側（Stage3のUI/評価ロジック）でルート専用の扱いとする。
+    """
+    entries: list[tuple[int, str]] = []
+    for line in lines:
+        stripped_full = line.rstrip()
+        if not stripped_full:
+            continue
+        core = stripped_full.lstrip('　').strip()
+        if core in ('削除', '（削る）') or core.startswith(('＊', '※')):
+            continue
+        entries.append((_effective_depth(stripped_full), core))
+
+    root: list[ClauseNode] = []
+    stack: list[tuple[int, list[ClauseNode]]] = [(-1, root)]
+    for depth, core in entries:
+        while len(stack) > 1 and stack[-1][0] >= depth:
+            stack.pop()
+        marker, body = _extract_marker(core)
+        own_criteria = [c for c in _extract_from_line(core) if c.resolved]
+        node = ClauseNode(text=core, marker=marker, own_criteria=own_criteria)
+        stack[-1][1].append(node)
+        stack.append((depth, node.children))
+
+    def _assign_combinators(nodes: list[ClauseNode]) -> None:
+        for n in nodes:
+            if n.children:
+                n.combinator = detect_combinator(n.text)
+            _assign_combinators(n.children)
+
+    _assign_combinators(root)
+    return root
 
 
 def evaluate_criterion(criterion: SpecCriterion, value) -> Optional[bool]:

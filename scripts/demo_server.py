@@ -25,10 +25,13 @@ API:
            該非判定結果を返す
     POST /api/stage3  {"row_label": "九", "item_id": "1"}
         -> 指定の号の条文（別表本文＋貨物等省令の対応条文）から、
-           数値仕様の判定条件（周波数・温度等の閾値）を機械的に抽出し、
-           ユーザーが実測値を入力するための質問項目を返す（TypeSafe
-           API呼び出し不要。純粋な正規表現ベースの抽出）。最終的な
-           該非判定（各条件を満たすか）はブラウザ側で計算する。
+           数値仕様の判定条件（周波数・温度等の閾値）を機械的に抽出する
+           （TypeSafe API呼び出し不要。純粋な正規表現ベースの抽出）。
+           貨物等省令側は、列挙リストの入れ子構造（イロハ→（一）（二）
+           →１２３…）とAND/ORの論理関係をlead sentenceの文言から
+           自動検出したツリー（clause_tree）として返す。最終的な
+           該非判定（各条件を満たすか、AND/ORをどう組み合わせるか）は
+           ブラウザ側で計算する。
 """
 
 from __future__ import annotations
@@ -46,7 +49,7 @@ sys.path.insert(0, str(REPO_ROOT))
 from core.list_classifier import classify_item, load_table_rows  # noqa: E402
 from core.matrix_lookup import find_entry, load_matrix_entries  # noqa: E402
 from core.predicate_extractor import classify_subitems, extract_subitems  # noqa: E402
-from core.spec_extractor import extract_spec_criteria  # noqa: E402
+from core.spec_extractor import build_clause_tree, extract_spec_criteria  # noqa: E402
 
 XML_PATH = REPO_ROOT / "jurisdictions/jp/raw/cabinet_orders/324CO0000000378_20260605_令和八年政令第百九十四号.xml"
 MATRIX_XLSX_PATH = REPO_ROOT / "jurisdictions/jp/raw/matrix/kamotsu_matrix_20260214.xlsx"
@@ -219,14 +222,14 @@ class Handler(BaseHTTPRequestHandler):
         matrix_entries = load_matrix_entries(MATRIX_XLSX_PATH, row_id) if row_id else []
         matrix_entry = find_entry(matrix_entries, item_id)
 
-        # 別表条文本文（一文として）＋ 貨物等省令の対応条文（枝番ごとの行）
-        # の両方から数値仕様条件を抽出する。前者は委任なしで別表自体に
-        # 数値基準が書かれているケース、後者は「経済産業省令で定める
-        # 仕様のもの」に委任されているケースをカバーする。
-        source_lines = [subitem.text]
-        if matrix_entry is not None:
-            source_lines.extend(matrix_entry.ministerial_lines)
-        criteria = extract_spec_criteria(source_lines)
+        # 別表条文本文自体の数値条件（委任なしで別表に直接数値基準が
+        # 書かれているケース）は独立したノードとして扱う。貨物等省令の
+        # 対応条文（「経済産業省令で定める仕様のもの」に委任されている
+        # ケース）は、列挙リストの入れ子構造（イロハ→（一）（二）→
+        # １２３…）と各グループのAND/ORをlead sentenceの文言から
+        # 自動検出したツリーとして返す。
+        item_text_criteria = [c for c in extract_spec_criteria([subitem.text]) if c.resolved]
+        clause_tree = build_clause_tree(matrix_entry.ministerial_lines) if matrix_entry else []
 
         self._send_json({
             "row_label": row_label,
@@ -234,7 +237,8 @@ class Handler(BaseHTTPRequestHandler):
             "label": subitem.label,
             "item_text": subitem.text,
             "ministerial_refs": matrix_entry.ministerial_refs if matrix_entry else [],
-            "criteria": [c.to_dict() for c in criteria],
+            "item_text_criteria": [c.to_dict() for c in item_text_criteria],
+            "clause_tree": [n.to_dict() for n in clause_tree],
         })
 
 

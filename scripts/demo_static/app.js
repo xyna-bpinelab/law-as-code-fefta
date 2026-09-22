@@ -26,9 +26,9 @@ let lastStage1Matches = [];
 let lastThreshold = 0.5;
 let currentStage2Subitems = [];
 let currentStage2Threshold = 0.5;
-let currentStage3Criteria = [];
+let currentStage3Tree = [];
+let currentStage3ItemTextCriteria = [];
 let currentStage3ItemId = null;
-let stage3CombineMode = "OR";
 
 function setStatus(el, text) {
   if (!text) {
@@ -304,13 +304,14 @@ async function runStage3(itemId) {
   stage3Panel.hidden = false;
   stage3Results.innerHTML = "";
   stage3Verdict.innerHTML = "";
-  setStatus(stage3Status, `${itemId}号の数値仕様条件を条文から抽出中...`);
+  setStatus(stage3Status, `${itemId}号の数値仕様条件・列挙リストの構造を条文から抽出中...`);
   stage3Panel.scrollIntoView({ behavior: "smooth", block: "nearest" });
 
   try {
     const data = await postJson("/api/stage3", { row_label: selectedRowLabel, item_id: itemId });
     stage3Title.textContent = `Stage3 — ${data.label}（${data.item_id}）の数値仕様を入力`;
-    currentStage3Criteria = (data.criteria || []).map((c, idx) => ({ ...c, id: idx, userValue: null, metState: null }));
+    currentStage3ItemTextCriteria = (data.item_text_criteria || []).map((c) => parseLeafCriterion(c));
+    currentStage3Tree = (data.clause_tree || []).map(parseTreeNode);
     renderStage3();
   } catch (e) {
     setError(stage3Error, "抽出に失敗しました: " + e.message);
@@ -319,143 +320,323 @@ async function runStage3(itemId) {
   }
 }
 
+function parseLeafCriterion(c) {
+  return { ...c, userValue: null, metState: null, badgeEl: null };
+}
+
+function parseTreeNode(raw) {
+  return {
+    text: raw.text,
+    marker: raw.marker,
+    combinator: raw.combinator,       // 自動検出結果（'AND'/'OR'/null）
+    userCombinator: null,             // ユーザーによる上書き（nullなら検出結果 or 既定ORを使う）
+    ownCriteria: (raw.own_criteria || []).map(parseLeafCriterion),
+    children: (raw.children || []).map(parseTreeNode),
+    manualValue: null,                // own_criteria・childrenどちらも無い場合の手動yes/no
+    badgeEl: null,
+  };
+}
+
 function requirementText(c) {
   const symbol = COMPARATOR_SYMBOL[c.comparator] || c.comparator;
   const unit = c.unit ? ` ${escapeHtml(c.unit)}` : "";
   return `条文の基準: <strong>${symbol} ${c.threshold}${unit}</strong>（${escapeHtml(c.matched_text || "")}）`;
 }
 
+// leaf criterion（数値条件）を1行として描画し、入力欄のイベントを配線する。
+function renderCriterionRow(c) {
+  const row = document.createElement("div");
+  row.className = "criterion-input-row";
+  row.innerHTML = `
+    <span class="param-label">${escapeHtml(c.parameter_label || "数値条件")}</span>
+    <input type="number" step="any" placeholder="実測値">
+    <span class="criterion-req">${requirementText(c)}</span>
+  `;
+  const input = row.querySelector("input");
+  input.addEventListener("input", () => {
+    const v = input.value === "" ? null : parseFloat(input.value);
+    c.userValue = v;
+    c.metState = evaluate_criterion_js(c, v);
+    updateAllBadges();
+  });
+  const badge = document.createElement("span");
+  badge.className = "criterion-verdict pending";
+  badge.textContent = "未入力";
+  row.appendChild(badge);
+  c.badgeEl = badge;
+  return row;
+}
+
+// 手動yes/noの判断行（数値化できなかった条件、または子を持たない葉ノード）
+function renderManualRow(node) {
+  const row = document.createElement("div");
+  row.className = "criterion-input-row";
+  row.innerHTML = `
+    <span class="param-label">この条件に該当するか（原文参照）</span>
+    <span class="bool-toggle">
+      <button data-v="yes">該当する</button>
+      <button data-v="no">該当しない</button>
+    </span>
+  `;
+  const buttons = row.querySelectorAll(".bool-toggle button");
+  buttons.forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const isYes = btn.dataset.v === "yes";
+      node.manualValue = isYes;
+      buttons.forEach((b) => b.classList.remove("active", "yes", "no"));
+      btn.classList.add("active", isYes ? "yes" : "no");
+      updateAllBadges();
+    });
+  });
+  const badge = document.createElement("span");
+  badge.className = "criterion-verdict pending";
+  badge.textContent = "未入力";
+  row.appendChild(badge);
+  node.badgeEl = badge;
+  return row;
+}
+
+function effectiveCombinator(node) {
+  return node.userCombinator || node.combinator || "OR";
+}
+
+// 子を持つノードの結合子（AND/OR）を表示するバッジ行。自動検出できた
+// 場合は検出結果を既定値として表示し、できなかった場合は「未検出」を
+// 明示した上でユーザーに選択させる。どちらの場合もボタンで上書き可能。
+function renderCombinatorRow(node, onChange) {
+  const row = document.createElement("div");
+  row.className = "row";
+  row.style.margin = "6px 0";
+  const detectedLabel = node.combinator
+    ? `自動検出: ${node.combinator === "AND" ? "すべてに該当（AND）" : "いずれかに該当（OR）"}`
+    : "自動検出できず（既定: OR）";
+  row.innerHTML = `<span class="hint">${escapeHtml(detectedLabel)}</span>`;
+  const orBtn = document.createElement("button");
+  orBtn.className = "ghost";
+  orBtn.textContent = "いずれか1つ（OR）";
+  const andBtn = document.createElement("button");
+  andBtn.className = "ghost";
+  andBtn.textContent = "すべて（AND）";
+  const refreshButtons = () => {
+    const active = effectiveCombinator(node);
+    orBtn.style.borderColor = active === "OR" ? "var(--accent)" : "";
+    andBtn.style.borderColor = active === "AND" ? "var(--accent)" : "";
+  };
+  orBtn.addEventListener("click", () => { node.userCombinator = "OR"; refreshButtons(); onChange(); });
+  andBtn.addEventListener("click", () => { node.userCombinator = "AND"; refreshButtons(); onChange(); });
+  refreshButtons();
+  row.appendChild(orBtn);
+  row.appendChild(andBtn);
+  return row;
+}
+
+// clause_treeの1ノードを再帰的に描画する。marker/textをヘッダーとして
+// 表示し、own_criteria（このノード自身が持つ数値条件、複数ならAND）→
+// 子ノード（あれば、結合子バッジ＋インデントして再帰描画）の順に並べる。
+function renderTreeNode(node, depth) {
+  const wrap = document.createElement("div");
+  wrap.className = "criterion-card";
+  wrap.style.marginLeft = `${depth * 16}px`;
+
+  const header = document.createElement("div");
+  header.className = "raw-line";
+  const headerText = document.createElement("span");
+  headerText.textContent = (node.marker ? `[${node.marker}] ` : "") + node.text;
+  header.appendChild(headerText);
+  wrap.appendChild(header);
+
+  if (node.children.length > 0) {
+    const groupBadge = document.createElement("span");
+    groupBadge.className = "criterion-verdict pending";
+    groupBadge.textContent = "未入力";
+    header.appendChild(groupBadge);
+    node.groupBadgeEl = groupBadge;
+  }
+
+  for (const c of node.ownCriteria) {
+    wrap.appendChild(renderCriterionRow(c));
+  }
+
+  const isPureManualLeaf = node.ownCriteria.length === 0 && node.children.length === 0;
+  if (isPureManualLeaf) {
+    wrap.appendChild(renderManualRow(node));
+  }
+
+  if (node.children.length > 0) {
+    wrap.appendChild(renderCombinatorRow(node, updateAllBadges));
+    for (const child of node.children) {
+      wrap.appendChild(renderTreeNode(child, depth + 1));
+    }
+  }
+
+  return wrap;
+}
+
 function renderStage3() {
   stage3Results.innerHTML = "";
 
-  if (currentStage3Criteria.length === 0) {
-    stage3Results.innerHTML = `<div class="empty">この号には機械抽出可能な数値仕様条件が見つかりませんでした。Stage2の判定のみで確定です。</div>`;
+  if (currentStage3ItemTextCriteria.length > 0) {
+    const section = document.createElement("div");
+    section.innerHTML = `<div class="hint" style="margin-bottom:6px;">別表条文自体の数値条件（すべて満たす必要があります）:</div>`;
+    for (const c of currentStage3ItemTextCriteria) {
+      const card = document.createElement("div");
+      card.className = "criterion-card";
+      card.appendChild(renderCriterionRow(c));
+      section.appendChild(card);
+    }
+    stage3Results.appendChild(section);
+  }
+
+  if (currentStage3Tree.length === 0) {
+    if (currentStage3ItemTextCriteria.length === 0) {
+      stage3Results.innerHTML = `<div class="empty">この号には機械抽出可能な数値仕様条件が見つかりませんでした。Stage2の判定のみで確定です。</div>`;
+    }
     renderStage3Verdict();
     return;
   }
 
-  for (const c of currentStage3Criteria) {
-    const card = document.createElement("div");
-    card.className = "criterion-card";
-
-    const rawLine = document.createElement("div");
-    rawLine.className = "raw-line";
-    rawLine.textContent = c.raw_line;
-    card.appendChild(rawLine);
-
-    const inputRow = document.createElement("div");
-    inputRow.className = "criterion-input-row";
-
-    if (c.resolved) {
-      inputRow.innerHTML = `
-        <span class="param-label">${escapeHtml(c.parameter_label || "数値条件")}</span>
-        <input type="number" step="any" placeholder="実測値">
-        <span class="criterion-req">${requirementText(c)}</span>
-      `;
-      const input = inputRow.querySelector("input");
-      input.addEventListener("input", () => {
-        const v = input.value === "" ? null : parseFloat(input.value);
-        c.userValue = v;
-        c.metState = evaluateNumericCriterion(c, v);
-        updateVerdictBadge(card, c);
-        renderStage3Verdict();
-      });
-    } else {
-      inputRow.innerHTML = `
-        <span class="param-label">この条件に該当するか（原文参照）</span>
-        <span class="bool-toggle">
-          <button data-v="yes">該当する</button>
-          <button data-v="no">該当しない</button>
-        </span>
-      `;
-      const buttons = inputRow.querySelectorAll(".bool-toggle button");
-      buttons.forEach((btn) => {
-        btn.addEventListener("click", () => {
-          const isYes = btn.dataset.v === "yes";
-          c.userValue = isYes;
-          c.metState = isYes;
-          buttons.forEach((b) => b.classList.remove("active", "yes", "no"));
-          btn.classList.add("active", isYes ? "yes" : "no");
-          updateVerdictBadge(card, c);
-          renderStage3Verdict();
-        });
-      });
-    }
-
-    const verdictSpan = document.createElement("span");
-    verdictSpan.className = "criterion-verdict pending";
-    verdictSpan.textContent = "未入力";
-    inputRow.appendChild(verdictSpan);
-
-    card.appendChild(inputRow);
-    stage3Results.appendChild(card);
+  const treeSection = document.createElement("div");
+  if (currentStage3Tree.length > 1) {
+    treeSection.appendChild(renderCombinatorRow(stage3RootGroup, updateAllBadges));
   }
+  for (const node of currentStage3Tree) {
+    treeSection.appendChild(renderTreeNode(node, 0));
+  }
+  stage3Results.appendChild(treeSection);
 
-  renderStage3Verdict();
+  updateAllBadges();
 }
 
-function evaluateNumericCriterion(c, value) {
-  if (value === null || Number.isNaN(value)) return null;
-  if (c.comparator === ">=") return value >= c.threshold;
-  if (c.comparator === "<=") return value <= c.threshold;
-  if (c.comparator === ">") return value > c.threshold;
-  if (c.comparator === "<") return value < c.threshold;
+function evaluate_criterion_js(c, value) {
+  if (value === null || value === "" || (typeof value === "number" && Number.isNaN(value))) return null;
+  if (!c.resolved) return !!value;
+  const v = typeof value === "number" ? value : parseFloat(value);
+  if (Number.isNaN(v)) return null;
+  if (c.comparator === ">=") return v >= c.threshold;
+  if (c.comparator === "<=") return v <= c.threshold;
+  if (c.comparator === ">") return v > c.threshold;
+  if (c.comparator === "<") return v < c.threshold;
   return null;
 }
 
-function updateVerdictBadge(card, c) {
-  const badge = card.querySelector(".criterion-verdict");
-  if (c.metState === null) {
-    badge.className = "criterion-verdict pending";
-    badge.textContent = "未入力";
-  } else if (c.metState) {
-    badge.className = "criterion-verdict met";
-    badge.textContent = "条件を満たす";
-  } else {
-    badge.className = "criterion-verdict unmet";
-    badge.textContent = "条件を満たさない";
-  }
-}
-
-function combineResults(criteria, mode) {
-  if (criteria.length === 0) return true;
-  const vals = criteria.map((c) => c.metState);
+function combineValues(vals, mode) {
+  if (vals.length === 0) return true;
   if (mode === "OR") {
     if (vals.some((v) => v === true)) return true;
     if (vals.every((v) => v === false)) return false;
     return null;
   }
-  // AND
   if (vals.some((v) => v === false)) return false;
   if (vals.every((v) => v === true)) return true;
   return null;
 }
 
+// ノードを再帰評価する。own_criteria群はAND（同一文中の複数条件は
+// 連言として扱う）、childrenはnodeのcombinator（検出値／ユーザー上書き／
+// 既定OR）で結合し、own_criteriaが実質的な条件を持つ場合はさらに
+// childrenの結果とAND（「であって、次の…」の連言構造）する。
+// own_criteriaもchildrenも無いleafは手動yes/no（manualValue）を返す。
+function evaluateNode(node) {
+  const hasOwn = node.ownCriteria.length > 0;
+  const hasChildren = node.children.length > 0;
+
+  if (!hasOwn && !hasChildren) {
+    return node.manualValue === null ? null : node.manualValue;
+  }
+
+  const ownResult = hasOwn ? combineValues(node.ownCriteria.map((c) => c.metState), "AND") : null;
+
+  if (!hasChildren) {
+    return ownResult;
+  }
+
+  const childResult = combineValues(node.children.map(evaluateNode), effectiveCombinator(node));
+
+  if (!hasOwn) {
+    return childResult;
+  }
+  if (ownResult === false || childResult === false) return false;
+  if (ownResult === true && childResult === true) return true;
+  return null;
+}
+
+// currentStage3Tree自体（複数の独立した代替定義が並ぶ場合がある）を
+// 束ねる、描画専用のダミーグループ。renderCombinatorRowを使い回すため
+// clause_treeのノードと同じ形にしておく。
+let stage3RootGroup = { combinator: null, userCombinator: null };
+
+function updateAllBadges() {
+  const updateNodeBadge = (node) => {
+    for (const c of node.ownCriteria) {
+      if (c.badgeEl) setBadge(c.badgeEl, c.metState);
+    }
+    for (const child of node.children) updateNodeBadge(child);
+    if (node.badgeEl) setBadge(node.badgeEl, node.manualValue);
+    if (node.groupBadgeEl) setBadge(node.groupBadgeEl, evaluateNode(node));
+  };
+  for (const c of currentStage3ItemTextCriteria) {
+    if (c.badgeEl) setBadge(c.badgeEl, c.metState);
+  }
+  for (const node of currentStage3Tree) updateNodeBadge(node);
+  renderStage3Verdict();
+}
+
+function setBadge(badgeEl, state) {
+  if (state === null) {
+    badgeEl.className = "criterion-verdict pending";
+    badgeEl.textContent = "未入力";
+  } else if (state) {
+    badgeEl.className = "criterion-verdict met";
+    badgeEl.textContent = "条件を満たす";
+  } else {
+    badgeEl.className = "criterion-verdict unmet";
+    badgeEl.textContent = "条件を満たさない";
+  }
+}
+
+function computeStage3SpecResult() {
+  const itemTextResult = currentStage3ItemTextCriteria.length > 0
+    ? combineValues(currentStage3ItemTextCriteria.map((c) => c.metState), "AND")
+    : null;
+  const treeResult = currentStage3Tree.length > 0
+    ? combineValues(currentStage3Tree.map(evaluateNode), effectiveCombinator(stage3RootGroup))
+    : null;
+
+  if (currentStage3ItemTextCriteria.length === 0) return treeResult;
+  if (currentStage3Tree.length === 0) return itemTextResult;
+  if (itemTextResult === false || treeResult === false) return false;
+  if (itemTextResult === true && treeResult === true) return true;
+  return null;
+}
+
+function countCriteria() {
+  let total = 0, answered = 0;
+  const walk = (node) => {
+    for (const c of node.ownCriteria) {
+      total += 1;
+      if (c.metState !== null) answered += 1;
+    }
+    if (node.ownCriteria.length === 0 && node.children.length === 0) {
+      total += 1;
+      if (node.manualValue !== null) answered += 1;
+    }
+    for (const child of node.children) walk(child);
+  };
+  for (const c of currentStage3ItemTextCriteria) {
+    total += 1;
+    if (c.metState !== null) answered += 1;
+  }
+  for (const node of currentStage3Tree) walk(node);
+  return { total, answered };
+}
+
 function renderStage3Verdict() {
-  const box = document.createElement("div");
-
-  const modeRow = document.createElement("div");
-  modeRow.className = "row";
-  modeRow.innerHTML = `
-    <span class="hint">号内の複数条件の関係（原文からは自動判定できません）:</span>
-    <button class="ghost" data-mode="OR">いずれか1つに該当（OR・既定）</button>
-    <button class="ghost" data-mode="AND">すべてに該当（AND）</button>
-  `;
-  modeRow.querySelectorAll("button").forEach((btn) => {
-    if (btn.dataset.mode === stage3CombineMode) btn.style.borderColor = "var(--accent)";
-    btn.addEventListener("click", () => {
-      stage3CombineMode = btn.dataset.mode;
-      renderStage3Verdict();
-    });
-  });
-
-  const specResult = combineResults(currentStage3Criteria, stage3CombineMode);
+  const specResult = computeStage3SpecResult();
   const stage2Item = findStage2Item(currentStage3ItemId);
   const stage2Hit = !!stage2Item && stage2Item.probability >= currentStage2Threshold && !stage2Item.suppressed;
 
-  let overall, headline, cls;
+  let headline, cls;
   if (specResult === null) {
-    overall = "pending";
     cls = "pending";
     headline = "未確定（すべての条件に回答してください）";
   } else if (stage2Hit && specResult === true) {
@@ -466,7 +647,7 @@ function renderStage3Verdict() {
     headline = "非該当";
   }
 
-  const answeredCount = currentStage3Criteria.filter((c) => c.metState !== null).length;
+  const { total, answered } = countCriteria();
   const specText = specResult === null ? "未確定" : (specResult ? "条件を満たす" : "条件を満たさない");
 
   const verdictBox = document.createElement("div");
@@ -475,13 +656,12 @@ function renderStage3Verdict() {
     <div class="headline">${headline}</div>
     <div class="detail">
       Stage2判定: ${stage2Item ? Math.round(stage2Item.probability * 100) + "%" + (stage2Item.suppressed ? "（除外規定により抑制）" : "") : "―"}
-      ／ 数値仕様（${stage3CombineMode === "OR" ? "OR" : "AND"}想定）: ${specText}
-      （${answeredCount}/${currentStage3Criteria.length}件に回答済み）
+      ／ 数値仕様（各グループの結合子は自動検出、未検出はOR既定）: ${specText}
+      （${answered}/${total}件に回答済み）
     </div>
   `;
 
   stage3Verdict.innerHTML = "";
-  stage3Verdict.appendChild(modeRow);
   stage3Verdict.appendChild(verdictBox);
 }
 
@@ -495,7 +675,8 @@ clearBtn.addEventListener("click", () => {
   setError(stage2Error, null);
   setError(stage3Error, null);
   selectedRowLabel = null;
-  currentStage3Criteria = [];
+  currentStage3Tree = [];
+  currentStage3ItemTextCriteria = [];
   currentStage3ItemId = null;
 });
 descriptionEl.addEventListener("keydown", (e) => {
