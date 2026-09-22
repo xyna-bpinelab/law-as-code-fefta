@@ -531,12 +531,24 @@ def render_appdx_table_markdown(table_el) -> list[str]:
     rel = (rel_el.text or "").strip() if rel_el is not None else ""
 
     lines = [f"## {title}{('　' + rel) if rel else ''}", ""]
-    rows = table_el.findall(".//TableRow")
-    for row in rows:
-        cols = row.findall("TableColumn")
-        cell_texts = ["".join(s.text or "" for s in col.iter("Sentence")).replace("\n", " ").strip() for col in cols]
-        cell_texts = [c if c else "　" for c in cell_texts]
-        lines.append("| " + " | ".join(cell_texts) + " |")
+
+    if table_el.find("TableStruct") is not None:
+        rows = table_el.findall(".//TableRow")
+        for i, row in enumerate(rows):
+            cols = row.findall("TableColumn")
+            cell_texts = [
+                "".join(s.text or "" for s in col.iter("Sentence")).replace("\n", " ").replace("|", "\\|").strip()
+                for col in cols
+            ]
+            cell_texts = [c if c else "　" for c in cell_texts]
+            lines.append("| " + " | ".join(cell_texts) + " |")
+            if i == 0:
+                # GFMの表として認識されるよう、見出し行の直後に区切り行を挿入する
+                lines.append("| " + " | ".join("---" for _ in cell_texts) + " |")
+    elif table_el.findall("Item"):
+        # TableStructを持たず、号(Item)の箇条書きとして構成されている別表
+        lines.extend(render_inline_items(table_el, 0))
+
     lines.append("")
     return lines
 
@@ -580,19 +592,28 @@ def build_nodes_and_edges_for_law(gb: GraphBuilder, root_el, law_id: str):
             continue
         gb.ensure_appdx_table_node(law_id, table_id, title=title, related_article=rel)
 
-        rows = table.findall(".//TableRow")
-        for row in rows:
-            cols = row.findall("TableColumn")
-            if not cols:
-                continue
-            first_cell = "".join(s.text or "" for s in cols[0].iter("Sentence")).strip()
-            row_id = kanji_digitseq_to_str(first_cell)
-            if row_id is None:
-                continue  # 見出し行など番号化できない行はノード化しない
-            row_text = " / ".join(
-                "".join(s.text or "" for s in col.iter("Sentence")).strip() for col in cols[1:]
-            )
-            gb.ensure_appdx_row_node(law_id, table_id, row_id, text=row_text)
+        if table.find("TableStruct") is not None:
+            rows = table.findall(".//TableRow")
+            for row in rows:
+                cols = row.findall("TableColumn")
+                if not cols:
+                    continue
+                first_cell = "".join(s.text or "" for s in cols[0].iter("Sentence")).strip()
+                row_id = kanji_digitseq_to_str(first_cell)
+                if row_id is None:
+                    continue  # 見出し行など番号化できない行はノード化しない
+                row_text = " / ".join(
+                    "".join(s.text or "" for s in col.iter("Sentence")).strip() for col in cols[1:]
+                )
+                gb.ensure_appdx_row_node(law_id, table_id, row_id, text=row_text)
+        else:
+            # TableStructを持たず、号(Item)で構成されている別表
+            for item in table.findall("Item"):
+                row_id = item.get("Num")
+                if not row_id:
+                    continue
+                row_text = collect_text(item)
+                gb.ensure_appdx_row_node(law_id, table_id, row_id, text=row_text)
 
     main_provision = lawbody.find("MainProvision")
     if main_provision is not None:
