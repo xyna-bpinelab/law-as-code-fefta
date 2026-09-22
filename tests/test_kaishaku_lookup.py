@@ -1,4 +1,4 @@
-"""core.kaishaku_lookup.find_interpretation_for_row() の単体テスト（API不要）。
+"""core.kaishaku_lookup の単体テスト（API不要）。
 
 pdfplumberが必要なため、未インストール環境ではスキップする。
 """
@@ -22,24 +22,54 @@ PDF_PATH = REPO_ROOT / "jurisdictions/jp/raw/circulars/kamotsu-kaishaku.pdf"
 @unittest.skipUnless(HAS_PDFPLUMBER, "pdfplumber not installed")
 @unittest.skipUnless(PDF_PATH.exists(), f"kaishaku PDF not found: {PDF_PATH}")
 class TestFindInterpretationForRow(unittest.TestCase):
-    def test_finds_row_9_starting_with_its_own_label(self):
+    @classmethod
+    def setUpClass(cls):
         from core.kaishaku_lookup import find_interpretation_for_row
-        result = find_interpretation_for_row(PDF_PATH, row_label="９")
-        self.assertIsNotNone(result)
-        self.assertTrue(result.text.startswith("９"))
-        self.assertIn("伝送通信装置", result.text)
+        cls.row9 = find_interpretation_for_row(PDF_PATH, row_label="９")
 
-    def test_row_range_is_before_next_row_label(self):
-        from core.kaishaku_lookup import find_interpretation_for_row
-        result = find_interpretation_for_row(PDF_PATH, row_label="９")
-        # 項10の内容（量子ビット等、項9の前段に出てくる用語ではない）が
-        # 混入していないことを軽く確認する
-        self.assertLess(result.start_page, result.end_page + 1)
+    def test_finds_row_9(self):
+        self.assertIsNotNone(self.row9)
+        self.assertGreater(len(self.row9.terms), 40)
+
+    def test_first_term_is_not_dropped_by_boundary_off_by_one(self):
+        # 項番号セルの文字位置が同一行の用語欄よりわずかに下にずれるため、
+        # マージンなしだと先頭の用語（伝送通信装置）が前の項に誤って
+        # 分類されてしまっていた実データ由来のリグレッションテスト。
+        terms = [t.term for t in self.row9.terms]
+        self.assertIn("伝送通信装置", terms)
+        self.assertEqual(terms[0], "伝送通信装置")
+
+    def test_multi_page_definition_is_concatenated(self):
+        # 「伝送通信装置」の解釈はページをまたいで続く（用語欄が空の行が
+        # 直前の用語の定義に結合されているはず）
+        entry = next(t for t in self.row9.terms if t.term == "伝送通信装置")
+        self.assertIn("終端装置", entry.definition)
+        self.assertIn("水中通信装置", entry.definition)  # 次ページ側の続き
 
     def test_unknown_row_returns_none(self):
         from core.kaishaku_lookup import find_interpretation_for_row
         result = find_interpretation_for_row(PDF_PATH, row_label="存在しない項")
         self.assertIsNone(result)
+
+    def test_match_terms_for_text_finds_direct_substring(self):
+        from core.kaishaku_lookup import match_terms_for_text
+        matched = match_terms_for_text(self.row9, "電子式交換装置")
+        terms = [t.term for t in matched]
+        self.assertIn("電子式交換装置", terms)
+
+    def test_match_terms_for_text_finds_reverse_substring(self):
+        # 号のテキスト「フェーズドアレーアンテナ」は、用語
+        # 「電子的に走査が可能なフェーズドアレーアンテナ」の部分文字列
+        # （逆方向）としてマッチする必要がある
+        from core.kaishaku_lookup import match_terms_for_text
+        matched = match_terms_for_text(self.row9, "フェーズドアレーアンテナ")
+        terms = [t.term for t in matched]
+        self.assertIn("電子的に走査が可能なフェーズドアレーアンテナ", terms)
+
+    def test_match_terms_for_text_no_match_for_unrelated_text(self):
+        from core.kaishaku_lookup import match_terms_for_text
+        matched = match_terms_for_text(self.row9, "全く関係のない架空の号テキスト")
+        self.assertEqual(matched, [])
 
 
 if __name__ == "__main__":

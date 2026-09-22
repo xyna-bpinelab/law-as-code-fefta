@@ -276,7 +276,7 @@ def classify_subitems(client, product_description: str, subitems: list[SubItem],
                        stage1_row_matches: Optional[dict] = None,
                        threshold: float = 0.5, model: Optional[str] = None,
                        ministerial_spec_text: Optional[str] = None,
-                       kaishaku_text: Optional[str] = None) -> list[SubItemMatch]:
+                       kaishaku_interpretation=None) -> list[SubItemMatch]:
     """号単位でJev(Noul)に独立して問い合わせ、除外節（hard_rule）で
     機械的に抑制できるものは抑制した上で、確率降順に返す。
 
@@ -296,17 +296,20 @@ def classify_subitems(client, product_description: str, subitems: list[SubItem],
             という委任先の具体的な数値基準（周波数・耐熱温度等）が分から
             ないため、指定した場合はJevへのstateに含めて判定材料とする。
             省略時は別表の号テキストのみで判定する（従来動作）。
-        kaishaku_text: 運用通達の別紙（例: kamotsu-kaishaku.pdf「輸出令
-            別表第１の解釈」）から抽出した、この行に対応する用語解釈の
-            まとまり（kaishaku_lookup.find_interpretation_for_row() で
-            取得）。「使用」「伝送通信装置」等の用語の正確な定義・除外
-            範囲が別表第一の条文だけでは分からないため、指定した場合は
-            Jevへのstateに含める。
+        kaishaku_interpretation: kaishaku_lookup.find_interpretation_for_row()
+            が返す RowInterpretation（運用通達別紙「輸出令別表第１の解釈」
+            の、この行に対応する用語解釈一覧）。指定した場合、
+            kaishaku_lookup.match_terms_for_text() で各号のテキストに
+            実際に現れる用語だけを号ごとに絞り込み、その号自身の
+            instructionsに個別に埋め込む（項全体をまとめて共有stateに
+            入れると無関係な号に他の号の用語解釈が混入してノイズになる
+            ため、号単位でマッチングする）。
 
     Returns:
         probability 降順の SubItemMatch のリスト。
     """
     from typesafe_sdk import Noul
+    from .kaishaku_lookup import match_terms_for_text
 
     questions = {}
     for it in subitems:
@@ -321,12 +324,12 @@ def classify_subitems(client, product_description: str, subitems: list[SubItem],
                 "その具体的な数値基準はstateの ministerial_order_spec に記載されている。"
                 "該当する記述があれば必ず参照して判定すること。"
             )
-        if kaishaku_text:
-            instructions += (
-                "\n\nまた、この項で使われる用語の正確な定義・除外範囲はstateの"
-                " term_interpretation（運用通達別紙「輸出令別表第１の解釈」）に記載されている。"
-                "用語の意味が条文だけでは曖昧な場合は必ず参照すること。"
-            )
+        if kaishaku_interpretation is not None:
+            matched_terms = match_terms_for_text(kaishaku_interpretation, it.text)
+            if matched_terms:
+                instructions += "\n\nこの号で使われる用語の定義（運用通達別紙より）:"
+                for td in matched_terms:
+                    instructions += f"\n・「{td.term}」: {td.definition}"
         questions[key] = Noul(
             instructions=instructions,
             criteria={
@@ -338,8 +341,6 @@ def classify_subitems(client, product_description: str, subitems: list[SubItem],
     state: dict = {"product_description": product_description}
     if ministerial_spec_text:
         state["ministerial_order_spec"] = ministerial_spec_text
-    if kaishaku_text:
-        state["term_interpretation"] = kaishaku_text
 
     kwargs = {"state": state, "questions": questions}
     if model:

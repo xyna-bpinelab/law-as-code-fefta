@@ -126,7 +126,7 @@ def main() -> None:
             client, args.description, subitems,
             stage1_row_matches=stage1_by_id, threshold=args.threshold, model=args.model,
             ministerial_spec_text=spec.full_text if spec else None,
-            kaishaku_text=kaishaku.text if kaishaku else None,
+            kaishaku_interpretation=kaishaku,
         )
 
     if args.json:
