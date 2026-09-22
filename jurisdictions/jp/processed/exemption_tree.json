@@ -1,0 +1,128 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "tree_id": "jp_fefta_exemption_decision_tree",
+  "title": "日本安全保障貿易管理 特例（許可免除）判定ナレッジツリー",
+  "version": "1.0.0",
+  "target_jurisdiction": "JP",
+  "nodes": {
+    "root": {
+      "id": "E000_START",
+      "description": "リスト規制該当品の特例（輸出令第4条）適用判定ルート",
+      "evaluator": "hard_rule",
+      "condition": "item.is_list_controlled == true",
+      "next": {
+        "true": "E100_HIGH_RISK_EXCLUSION_CHECK",
+        "false": "RESULT_EXEMPTION_NOT_APPLICABLE_NOT_LISTED"
+      }
+    },
+    "E100_HIGH_RISK_EXCLUSION_CHECK": {
+      "id": "E100_HIGH_RISK_EXCLUSION_CHECK",
+      "title": "特例適用除外品目（武器・大量破壊兵器等）のチェック",
+      "legal_basis": [
+        "輸出貿易管理令 第4条第1項但書",
+        "輸出貿易管理令の運用について（運用通達）"
+      ],
+      "evaluator": "hard_rule",
+      "description": "武器（1の項）、告示貨物（Very Sensitive）、および核・化学・生物・ミサイル等の高感度品目は原則として特例全般の対象外となります。",
+      "conditions": [
+        "item.category_number == 1",
+        "item.is_kokushi_kawamono == true",
+        "item.is_wmd_related == true"
+      ],
+      "next": {
+        "true": "RESULT_EXEMPTION_NOT_APPLICABLE_HIGH_RISK",
+        "false": "E200_SMALL_VALUE_EXEMPTION_CHECK"
+      }
+    },
+    "E200_SMALL_VALUE_EXEMPTION_CHECK": {
+      "id": "E200_SMALL_VALUE_EXEMPTION_CHECK",
+      "title": "少額特例（小額特例）の適用判定",
+      "legal_basis": [
+        "輸出貿易管理令 第4条第1項第4号",
+        "運用通達 第4条関係（小額特例）"
+      ],
+      "evaluator": "hard_rule",
+      "conditions": [
+        "transaction.contract_value_jpy <= item.small_value_limit_jpy",
+        "item.is_small_value_excluded == false",
+        "destination.is_small_value_excluded_country == false",
+        "transaction.is_split_shipment == false"
+      ],
+      "next": {
+        "true": "RESULT_EXEMPTION_APPLICABLE_SMALL_VALUE",
+        "false": "E300_REPAIR_EXEMPTION_CHECK"
+      }
+    },
+    "E300_REPAIR_EXEMPTION_CHECK": {
+      "id": "E300_REPAIR_EXEMPTION_CHECK",
+      "title": "無償修理・交換品特例の適用判定",
+      "legal_basis": [
+        "輸出貿易管理令 第4条第1項第5号",
+        "輸出許可取扱要領 第3"
+      ],
+      "evaluator": "hybrid_jev",
+      "jev_context_prompt": "輸入した貨物を無償で修理して送り返す取引、または無償で交換品を送付する取引の実態を評価します。",
+      "conditions": [
+        "transaction.reason == 'REPAIR_RETURN' or transaction.reason == 'FREE_REPLACEMENT'",
+        "transaction.is_free_of_charge == true",
+        "item.spec_changed == false"
+      ],
+      "next": {
+        "true": "RESULT_EXEMPTION_APPLICABLE_REPAIR",
+        "false": "E400_BAGGAGE_EXEMPTION_CHECK"
+      }
+    },
+    "E400_BAGGAGE_EXEMPTION_CHECK": {
+      "id": "E400_BAGGAGE_EXEMPTION_CHECK",
+      "title": "手荷物・携帯品・引越荷物特例の適用判定",
+      "legal_basis": [
+        "輸出貿易管理令 第4条第1項第2号"
+      ],
+      "evaluator": "hybrid_jev",
+      "jev_context_prompt": "渡航者が自己の用に供するために携行するPC・スマホ等の手荷物、または引っ越しに伴う個人財産であるかを評価します。",
+      "conditions": [
+        "transaction.is_personal_baggage == true",
+        "transaction.for_personal_use == true"
+      ],
+      "next": {
+        "true": "RESULT_EXEMPTION_APPLICABLE_BAGGAGE",
+        "false": "RESULT_EXEMPTION_NOT_APPLICABLE"
+      }
+    }
+  },
+  "results": {
+    "RESULT_EXEMPTION_NOT_APPLICABLE_NOT_LISTED": {
+      "is_exempt": false,
+      "reason": "リスト規制非該当のため特例判定対象外（キャッチオール規制へ）。",
+      "requires_license_check": false
+    },
+    "RESULT_EXEMPTION_NOT_APPLICABLE_HIGH_RISK": {
+      "is_exempt": false,
+      "reason": "武器（1の項）または告示貨物・高感度品目のため、特例の適用は一切できません（包括・個別許可判定へ）。",
+      "requires_license_check": true
+    },
+    "RESULT_EXEMPTION_APPLICABLE_SMALL_VALUE": {
+      "is_exempt": true,
+      "exemption_type": "SMALL_VALUE",
+      "description": "少額特例（輸出令第4条第1項第4号）が適用されるため、輸出許可申請は不要です。",
+      "legal_basis": "輸出貿易管理令 第4条第1項第4号"
+    },
+    "RESULT_EXEMPTION_APPLICABLE_REPAIR": {
+      "is_exempt": true,
+      "exemption_type": "REPAIR_RETURN",
+      "description": "無償修理・送り返し特例（輸出令第4条第1項第5号）が適用されるため、輸出許可申請は不要です。",
+      "legal_basis": "輸出貿易管理令 第4条第1項第5号"
+    },
+    "RESULT_EXEMPTION_APPLICABLE_BAGGAGE": {
+      "is_exempt": true,
+      "exemption_type": "PERSONAL_BAGGAGE",
+      "description": "携帯品・手荷物特例（輸出令第4条第1項第2号）が適用されるため、輸出許可申請は不要です。",
+      "legal_basis": "輸出貿易管理令 第4条第1項第2号"
+    },
+    "RESULT_EXEMPTION_NOT_APPLICABLE": {
+      "is_exempt": false,
+      "reason": "いずれの特例要件も満たさないため、許可手続き（包括許可・個別許可）の判定へ移行します。",
+      "requires_license_check": true
+    }
+  }
+}
