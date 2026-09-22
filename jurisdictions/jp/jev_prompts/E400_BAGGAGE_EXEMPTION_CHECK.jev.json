@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "prompt_id": "jp_fefta_E400_BAGGAGE_EXEMPTION_CHECK",
+  "tree_id": "jp_fefta_exemption_decision_tree",
+  "node_id": "E400_BAGGAGE_EXEMPTION_CHECK",
+  "title": "手荷物・携帯品・引越荷物特例の適用判定（Jevプロンプト）",
+  "version": "1.0.0",
+  "target_jurisdiction": "JP",
+  "evaluator": "hybrid_jev",
+  "legal_basis": [
+    "輸出貿易管理令 第4条第1項第2号"
+  ],
+  "context_prompt": "渡航者が自己の用に供するために携行するPC・スマホ等の手荷物、または引っ越しに伴う個人財産であるかを評価します。",
+  "system_prompt": "あなたは日本の安全保障貿易管理における手荷物・携帯品・引越荷物特例（輸出令第4条第1項第2号）の適用可否を判定するJevエージェントです。input として与えられる取引情報のみを判定根拠とし、資料に記載のない事実を推測で補ってはなりません。判定基準は次の2条件すべてを満たすことです。(1) 渡航者本人が携行する手荷物・引越荷物であり、商業目的の貨物（サンプル、販売品、業務用機材の別送等）ではないこと。(2) 当該貨物が渡航者自身の私的使用に供されるものであること（第三者への譲渡・販売目的でないこと）。出力は必ず output_schema に適合するJSONのみとし、JSON以外の説明文を出力してはなりません。",
+  "input_schema": {
+    "type": "object",
+    "required": ["transaction"],
+    "additionalProperties": false,
+    "properties": {
+      "transaction": {
+        "type": "object",
+        "required": ["is_personal_baggage", "for_personal_use"],
+        "properties": {
+          "is_personal_baggage": {
+            "type": "boolean",
+            "description": "渡航者本人が携行する手荷物・引越荷物であるか（別送品・商業貨物ではないか）"
+          },
+          "for_personal_use": {
+            "type": "boolean",
+            "description": "当該貨物が渡航者自身の私的使用に供されるものであるか（第三者への譲渡・販売目的でないか）"
+          }
+        }
+      }
+    }
+  },
+  "evaluation_conditions": [
+    "transaction.is_personal_baggage == true",
+    "transaction.for_personal_use == true"
+  ],
+  "output_schema": {
+    "type": "object",
+    "required": ["result", "confidence", "reasoning", "next"],
+    "additionalProperties": false,
+    "properties": {
+      "result": {
+        "type": "boolean",
+        "description": "evaluation_conditions の2条件すべてを満たす場合にtrue"
+      },
+      "confidence": {
+        "type": "number",
+        "minimum": 0,
+        "maximum": 1,
+        "description": "判定の確信度"
+      },
+      "reasoning": {
+        "type": "string",
+        "description": "各条件の充足・不充足の根拠を簡潔に記述"
+      },
+      "next": {
+        "type": "string",
+        "enum": [
+          "RESULT_EXEMPTION_APPLICABLE_BAGGAGE",
+          "RESULT_EXEMPTION_NOT_APPLICABLE"
+        ],
+        "description": "exemption_tree.json の E400_BAGGAGE_EXEMPTION_CHECK.next に対応する遷移先ノードID"
+      }
+    }
+  },
+  "next_mapping": {
+    "true": "RESULT_EXEMPTION_APPLICABLE_BAGGAGE",
+    "false": "RESULT_EXEMPTION_NOT_APPLICABLE"
+  }
+}
