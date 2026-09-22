@@ -217,6 +217,9 @@ def extract_subitems(xml_path: Path, row_label: str) -> list[SubItem]:
             return
         text = (current_body + "".join(current_nested_lines)).strip()
         raw_text = (current_raw_first_line + "".join(current_nested_lines)).strip()
+        if text == "削除":
+            # 廃止済みの号。判定対象として意味がないため除外する。
+            return
         item_id = _positional_label_to_id(current_label) or current_label
         subitems.append(SubItem(
             label=current_label, item_id=item_id, text=text, raw_text=raw_text,
