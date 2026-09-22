@@ -140,24 +140,55 @@
 
   .item-row {
     border-bottom: 1px solid var(--border);
-    padding: 10px 0;
+    padding: 8px 0;
   }
   .item-row:last-child { border-bottom: none; }
-  .item-head { display: flex; align-items: baseline; gap: 8px; }
-  .item-head .label { font-weight: 700; font-size: 13px; min-width: 70px; }
-  .item-head .pct { font-size: 12px; color: var(--text-dim); margin-left: auto; font-variant-numeric: tabular-nums; }
-  .tag { font-size: 11px; padding: 1px 7px; border-radius: 999px; }
+
+  .cond-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 3px 0;
+    flex-wrap: wrap;
+  }
+  .cond-row.exclusion-row { padding-left: 2px; }
+  .cond-type-tag {
+    font-size: 10px;
+    font-weight: 700;
+    padding: 2px 7px;
+    border-radius: 4px;
+    flex-shrink: 0;
+    white-space: nowrap;
+  }
+  .cond-type-tag.necessary { background: var(--accent-bg); color: var(--accent); }
+  .cond-type-tag.exclusion { background: var(--code-bg); color: var(--text-dim); }
+  .cond-label { font-weight: 700; font-size: 13px; min-width: 56px; flex-shrink: 0; }
+  .cond-text {
+    font-size: 12.5px;
+    color: var(--text-dim);
+    flex: 1 1 160px;
+    min-width: 100px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .cond-bar { width: 90px; flex-shrink: 0; }
+  .cond-spacer { flex: 1 1 auto; min-width: 0; }
+  .pct { font-size: 12px; color: var(--text-dim); font-variant-numeric: tabular-nums; flex-shrink: 0; }
+
+  .tag { font-size: 11px; padding: 1px 7px; border-radius: 999px; flex-shrink: 0; white-space: nowrap; }
   .tag.hit { background: var(--ok-bg); color: var(--ok); }
-  .tag.suppressed { background: var(--code-bg); color: var(--text-dim); text-decoration: line-through; }
+  .tag.suppressed { background: var(--code-bg); color: var(--text-dim); }
   .tag.review { background: var(--warn-bg); color: var(--warn); }
-  .reason { font-size: 12px; color: var(--text-dim); margin-top: 4px; padding-left: 78px; }
+  .tag.off-tag { background: var(--code-bg); color: var(--text-dim); opacity: 0.7; }
 
   .empty { font-size: 13px; color: var(--text-dim); padding: 20px 0; text-align: center; }
 
   @media (max-width: 560px) {
     .bar-row { grid-template-columns: 60px 1fr 46px; }
-    .item-head .label { min-width: 56px; }
-    .reason { padding-left: 0; }
+    .cond-label { min-width: 48px; }
+    .cond-bar { display: none; }
+    .cond-text { flex-basis: 100%; white-space: normal; }
   }
 </style>
 </head>

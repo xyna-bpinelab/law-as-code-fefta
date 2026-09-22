@@ -265,10 +265,17 @@ class SubItemMatch:
         return {
             "label": self.subitem.label,
             "item_id": self.subitem.item_id,
+            "text": self.subitem.text,
             "probability": self.probability,
             "suppressed": self.suppressed,
             "suppressed_reason": self.suppressed_reason,
             "needs_manual_review": self.needs_manual_review,
+            # 除外節の構造情報（発火の有無にかかわらず常に返す。
+            # UI側で「必要条件」とは別に「除外規定」の行として
+            # 常時表示できるようにするため）
+            "excludes_rows": list(self.subitem.excludes_rows),
+            "excludes_self_items": list(self.subitem.excludes_self_items),
+            "raw_exclusion": self.subitem.raw_exclusion,
         }
 
 

@@ -17,6 +17,8 @@ const stage2Results = document.getElementById("stage2Results");
 let selectedRowLabel = null;
 let lastStage1Matches = [];
 let lastThreshold = 0.5;
+let currentStage2Subitems = [];
+let currentStage2Threshold = 0.5;
 
 function setStatus(el, text) {
   if (!text) {
@@ -42,6 +44,21 @@ function escapeHtml(s) {
   return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
+// "3_2" のような id（枝番）を [3, 2] のように数値配列化し、
+// 項番号・号番号の自然な昇順（1, 2, 3, 3の2, 4, ...）で比較する。
+function idSortKey(id) {
+  return String(id).split("_").map((p) => parseInt(p, 10) || 0);
+}
+function compareIds(a, b) {
+  const ka = idSortKey(a), kb = idSortKey(b);
+  const len = Math.max(ka.length, kb.length);
+  for (let i = 0; i < len; i++) {
+    const va = ka[i] ?? 0, vb = kb[i] ?? 0;
+    if (va !== vb) return va - vb;
+  }
+  return 0;
+}
+
 async function postJson(path, body) {
   const res = await fetch(path, {
     method: "POST",
@@ -59,7 +76,8 @@ function renderStage1(matches, threshold) {
   lastStage1Matches = matches;
   lastThreshold = threshold;
   stage1Results.innerHTML = "";
-  for (const m of matches) {
+  const sorted = [...matches].sort((a, b) => compareIds(a.row_id, b.row_id));
+  for (const m of sorted) {
     const pct = Math.round(m.probability * 100);
     const hit = m.probability >= threshold;
     const row = document.createElement("div");
@@ -76,6 +94,8 @@ function renderStage1(matches, threshold) {
 }
 
 function renderStage2(data) {
+  currentStage2Subitems = data.subitems || [];
+  currentStage2Threshold = data.threshold;
   stage2Meta.innerHTML = "";
   const specBadge = document.createElement("span");
   specBadge.className = "badge " + (data.ministerial_spec_found ? "ok" : "off");
@@ -101,38 +121,102 @@ function renderStage2(data) {
     return;
   }
 
-  for (const m of data.subitems) {
-    const pct = Math.round(m.probability * 100);
-    const hit = m.probability >= data.threshold && !m.suppressed;
-    const row = document.createElement("div");
-    row.className = "item-row";
+  const sorted = [...data.subitems].sort((a, b) => compareIds(a.item_id, b.item_id));
 
-    let tag = "";
-    if (m.suppressed) {
-      tag = `<span class="tag suppressed">除外規定で抑制</span>`;
-    } else if (hit) {
-      tag = `<span class="tag hit">該当候補</span>`;
+  for (const m of sorted) {
+    const group = document.createElement("div");
+    group.className = "item-row";
+    group.appendChild(renderNecessaryConditionRow(m, data.threshold));
+    for (const excl of buildExclusionRows(m)) {
+      group.appendChild(excl);
     }
-    const reviewTag = m.needs_manual_review
-      ? `<span class="tag review">要目視確認</span>`
-      : "";
-
-    row.innerHTML = `
-      <div class="item-head">
-        <span class="label">${escapeHtml(m.label)}</span>
-        ${tag}
-        ${reviewTag}
-        <span class="pct">${pct}%</span>
-      </div>
-    `;
-    if (m.suppressed && m.suppressed_reason) {
-      const reason = document.createElement("div");
-      reason.className = "reason";
-      reason.textContent = m.suppressed_reason;
-      row.appendChild(reason);
-    }
-    stage2Results.appendChild(row);
+    stage2Results.appendChild(group);
   }
+}
+
+// 「必要条件」行: 号自身の本文（実質テキスト）に対するJevの該当確率。
+// 除外規定が発火しているかどうかとは無関係に、この号の本文自体が
+// 該当するかどうかを表す一次判定。
+function renderNecessaryConditionRow(m, threshold) {
+  const pct = Math.round(m.probability * 100);
+  const hit = m.probability >= threshold;
+  const row = document.createElement("div");
+  row.className = "cond-row";
+  row.innerHTML = `
+    <span class="cond-type-tag necessary">必要条件</span>
+    <span class="cond-label">${escapeHtml(m.label)}</span>
+    <span class="cond-text" title="${escapeHtml(m.text || "")}">${escapeHtml(m.text || "")}</span>
+    <div class="bar-track cond-bar"><div class="bar-fill${hit ? " hit" : ""}" style="width:${pct}%"></div></div>
+    <span class="pct">${pct}%</span>
+  `;
+  if (m.needs_manual_review) {
+    const tag = document.createElement("span");
+    tag.className = "tag review";
+    tag.textContent = "要目視確認";
+    row.appendChild(tag);
+  }
+  if (m.suppressed) {
+    const tag = document.createElement("span");
+    tag.className = "tag suppressed";
+    tag.textContent = "除外規定により非該当";
+    row.appendChild(tag);
+  } else if (hit) {
+    const tag = document.createElement("span");
+    tag.className = "tag hit";
+    tag.textContent = "該当候補";
+    row.appendChild(tag);
+  }
+  return row;
+}
+
+// 「除外規定」行: この号に付随する除外条件を、種別ごとに最小単位で
+// 分割して1行ずつ表示する（他項番の除外／同一行内の他号の除外／
+// 機械的に解決できない除外節、の3種類）。
+function buildExclusionRows(m) {
+  const rows = [];
+  for (const rowId of m.excludes_rows || []) {
+    rows.push(makeExclusionRow(m, `項${rowId}に該当する場合を除く`, isRowExclusionTriggered(rowId)));
+  }
+  for (const itemId of m.excludes_self_items || []) {
+    rows.push(makeExclusionRow(m, `同じ行内の号（item_id=${itemId}）に該当する場合を除く`, isSiblingExclusionTriggered(itemId)));
+  }
+  if (m.raw_exclusion) {
+    rows.push(makeExclusionRow(m, m.raw_exclusion, null));
+  }
+  return rows;
+}
+
+function isRowExclusionTriggered(rowId) {
+  const match = lastStage1Matches.find((r) => r.row_id === rowId);
+  if (!match) return null;
+  return match.probability >= lastThreshold;
+}
+
+function isSiblingExclusionTriggered(itemId) {
+  const sibling = (currentStage2Subitems || []).find((s) => s.item_id === itemId);
+  if (!sibling) return null;
+  return sibling.probability >= currentStage2Threshold;
+}
+
+function makeExclusionRow(m, text, triggered) {
+  const row = document.createElement("div");
+  row.className = "cond-row exclusion-row";
+  let statusTag;
+  if (triggered === null) {
+    statusTag = `<span class="tag review">要目視確認</span>`;
+  } else if (triggered) {
+    statusTag = `<span class="tag suppressed">適用中（この号は非該当）</span>`;
+  } else {
+    statusTag = `<span class="tag off-tag">現時点では不適用</span>`;
+  }
+  row.innerHTML = `
+    <span class="cond-type-tag exclusion">除外規定</span>
+    <span class="cond-label">${escapeHtml(m.label)}</span>
+    <span class="cond-text" title="${escapeHtml(text)}">${escapeHtml(text)}</span>
+    <span class="cond-spacer"></span>
+    ${statusTag}
+  `;
+  return row;
 }
 
 async function runStage1() {
