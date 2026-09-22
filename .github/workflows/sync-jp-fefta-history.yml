@@ -1,0 +1,49 @@
+name: Sync JP FEFTA Law History
+
+on:
+  schedule:
+    # 毎週日曜日 00:00 UTC (日本時間 月曜 09:00) に実行
+    - cron: "0 0 * * 0"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sync-jp-fefta-history
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Fetch JP FEFTA law history
+        run: python3 scripts/fetch_jp_law_history.py
+
+      - name: Check for changes
+        id: git_status
+        run: |
+          git add -A jurisdictions/jp/raw
+          if git diff --cached --quiet; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Commit and push changes
+        if: steps.git_status.outputs.changed == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "chore(jp): sync FEFTA law history XML ($(date -u +%Y-%m-%d))"
+          git push
