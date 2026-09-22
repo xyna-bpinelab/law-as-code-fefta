@@ -231,7 +231,7 @@ async function runStage1() {
   selectedRowLabel = null;
 
   runBtn.disabled = true;
-  setStatus(stage1Status, "Stage1: 全17項を判定中...（TypeSafe AIを呼び出しています）");
+  setStatus(stage1Status, "Stage1: 全17項の製品カテゴリに属するか分類中...（TypeSafe AIを呼び出しています）");
   stage1Panel.hidden = true;
 
   try {

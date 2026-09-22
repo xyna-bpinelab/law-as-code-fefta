@@ -197,8 +197,9 @@
   <header>
     <h1>輸出令別表第一 該非判定デモ</h1>
     <div class="sub">
-      製品・技術の自然文説明を入力すると、TypeSafe AI (Jev) が別表第一の各項番を独立に評価します（複数項番の同時該当あり）。
-      項番をクリックすると、号単位まで分解し、貨物等省令の数値仕様・運用通達の用語解釈・除外規定のhard_rule抑制を反映した細粒度判定を表示します。
+      Stage1は<strong>製品分類のスクリーニング</strong>です（規制基準の該非判定ではありません）。製品・技術の自然文説明が別表第一の各項番が扱う
+      製品カテゴリに属するかどうかだけを、TypeSafe AI (Jev) が項番ごとに独立評価します（複数項番への同時分類あり）。
+      項番をクリックすると号単位まで分解し、貨物等省令の数値仕様・運用通達の用語解釈・除外規定のhard_rule抑制を反映した、実際の該非判定（Stage2）を表示します。
       <br>結果はあくまで一次スクリーニングであり、実際の該非判定の代替ではありません。
     </div>
   </header>
@@ -206,21 +207,21 @@
   <div class="panel">
     <textarea id="description" placeholder="例: 多段ロケットの製造に使用される、チタン合金部品の等方圧成形（アイソスタチックプレス）装置。ロケットエンジンの構造部材製造工程で使用される。"></textarea>
     <div class="row">
-      <button id="runBtn">該非判定を実行</button>
+      <button id="runBtn">製品分類スクリーニングを実行</button>
       <button id="clearBtn" class="ghost">クリア</button>
-      <span class="hint">閾値0.5以上を「該当候補」として表示します</span>
+      <span class="hint">閾値0.5以上を「分類候補」として表示します</span>
     </div>
     <div id="stage1Status" class="status" hidden></div>
     <div id="stage1Error" class="error-box" hidden></div>
   </div>
 
   <div class="panel" id="stage1Panel" hidden>
-    <h2>Stage1 — 項番レベル判定（全17項）</h2>
+    <h2>Stage1 — 製品分類スクリーニング（全17項、該非判定ではありません）</h2>
     <div id="stage1Results"></div>
   </div>
 
   <div class="panel" id="stage2Panel" hidden>
-    <h2 id="stage2Title">Stage2 — 号単位の細粒度判定</h2>
+    <h2 id="stage2Title">Stage2 — 号単位の該非判定</h2>
     <div id="stage2Meta" class="sub-meta"></div>
     <div id="stage2Status" class="status" hidden></div>
     <div id="stage2Error" class="error-box" hidden></div>
