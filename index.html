@@ -1,0 +1,359 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>law-as-code-fefta ビューア</title>
+<style>
+  :root {
+    --bg: #f7f7f5;
+    --panel-bg: #ffffff;
+    --text: #1c1c1c;
+    --text-dim: #6b6b6b;
+    --border: #e2e0db;
+    --accent: #8a3324;
+    --accent-bg: #fbeae6;
+    --code-bg: #f0efe9;
+    --shadow: 0 1px 2px rgba(0,0,0,0.04);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #16161a;
+      --panel-bg: #1e1e23;
+      --text: #ececec;
+      --text-dim: #9a9a9a;
+      --border: #33333a;
+      --accent: #e2836f;
+      --accent-bg: #3a2420;
+      --code-bg: #26262c;
+      --shadow: none;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: "Hiragino Sans", "Yu Gothic", "Noto Sans JP", -apple-system, BlinkMacSystemFont, sans-serif;
+  }
+  body {
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  header {
+    padding: 14px 20px;
+    border-bottom: 1px solid var(--border);
+    background: var(--panel-bg);
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  header h1 {
+    font-size: 16px;
+    margin: 0;
+    font-weight: 700;
+    letter-spacing: 0.01em;
+  }
+  header .sub {
+    font-size: 12px;
+    color: var(--text-dim);
+  }
+  .layout {
+    flex: 1;
+    display: flex;
+    min-height: 0;
+  }
+  nav.sidebar {
+    width: 280px;
+    flex-shrink: 0;
+    border-right: 1px solid var(--border);
+    background: var(--panel-bg);
+    overflow-y: auto;
+    padding: 12px 0 40px;
+  }
+  nav.sidebar .group-label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-dim);
+    padding: 14px 16px 6px;
+  }
+  nav.sidebar button.doc-item {
+    display: block;
+    width: 100%;
+    text-align: left;
+    background: none;
+    border: none;
+    color: var(--text);
+    font-size: 13.5px;
+    line-height: 1.5;
+    padding: 8px 16px;
+    cursor: pointer;
+    border-left: 3px solid transparent;
+  }
+  nav.sidebar button.doc-item:hover {
+    background: var(--code-bg);
+  }
+  nav.sidebar button.doc-item.active {
+    background: var(--accent-bg);
+    border-left-color: var(--accent);
+    color: var(--accent);
+    font-weight: 600;
+  }
+  main {
+    flex: 1;
+    overflow-y: auto;
+    min-width: 0;
+  }
+  #content {
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 32px 24px 80px;
+    line-height: 1.85;
+    font-size: 15px;
+    word-break: break-word;
+  }
+  #content h1 { font-size: 22px; margin: 0 0 16px; border-bottom: 1px solid var(--border); padding-bottom: 10px; }
+  #content h2 { font-size: 17px; margin: 32px 0 12px; }
+  #content h3 { font-size: 15px; margin: 20px 0 8px; }
+  #content p { margin: 10px 0; }
+  #content ul { margin: 6px 0; padding-left: 22px; }
+  #content li { margin: 3px 0; }
+  #content blockquote {
+    margin: 12px 0;
+    padding: 8px 14px;
+    border-left: 3px solid var(--border);
+    color: var(--text-dim);
+    font-size: 13px;
+    background: var(--code-bg);
+  }
+  #content hr { border: none; border-top: 1px solid var(--border); margin: 24px 0; }
+  #content code {
+    background: var(--code-bg);
+    padding: 1px 5px;
+    border-radius: 4px;
+    font-size: 0.9em;
+  }
+  #content .table-wrap { overflow-x: auto; margin: 14px 0; }
+  #content table { border-collapse: collapse; width: 100%; font-size: 13px; }
+  #content th, #content td {
+    border: 1px solid var(--border);
+    padding: 6px 10px;
+    text-align: left;
+    vertical-align: top;
+  }
+  #content th { background: var(--code-bg); }
+  .state-msg {
+    color: var(--text-dim);
+    padding: 40px 24px;
+    font-size: 14px;
+  }
+  .state-msg.error { color: var(--accent); }
+  @media (max-width: 720px) {
+    .layout { flex-direction: column; }
+    nav.sidebar {
+      width: 100%;
+      max-height: 40vh;
+      border-right: none;
+      border-bottom: 1px solid var(--border);
+    }
+    #content { padding: 20px 16px 60px; }
+  }
+</style>
+</head>
+<body>
+  <header>
+    <h1>law-as-code-fefta</h1>
+    <span class="sub">日本 外為法・輸出関連法令 / 運用通達 ビューア（最新版）</span>
+  </header>
+  <div class="layout">
+    <nav class="sidebar" id="sidebar"></nav>
+    <main><div id="content" class="state-msg">読み込み中...</div></main>
+  </div>
+
+<script>
+const DOCS = [
+  { group: "法律", title: "外国為替及び外国貿易法（外為法）", path: "jurisdictions/jp/processed/markdown/laws/324AC0000000228.md" },
+  { group: "政令", title: "輸出貿易管理令（輸出令）", path: "jurisdictions/jp/processed/markdown/cabinet_orders/324CO0000000378.md" },
+  { group: "省令", title: "貨物等省令", path: "jurisdictions/jp/processed/markdown/ministerial_orders/403M50000400049.md" },
+  { group: "運用通達", title: "輸出貿易管理令の運用について", path: "jurisdictions/jp/processed/markdown/circulars/unyou_tsutatsu.md" },
+  { group: "運用通達", title: "輸出令別表第１の解釈（表）", path: "jurisdictions/jp/processed/markdown/circulars/kamotsu-kaishaku.md" },
+];
+
+function escapeHtml(s) {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+function inlineFormat(text) {
+  let t = escapeHtml(text);
+  t = t.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+  t = t.replace(/`([^`]+)`/g, "<code>$1</code>");
+  return t;
+}
+
+function splitTableRow(line) {
+  let inner = line.trim().replace(/^\|/, "").replace(/\|\s*$/, "");
+  return inner.split(/(?<!\\)\|/).map(c => c.trim().replace(/\\\|/g, "|"));
+}
+
+function isTableSeparator(line) {
+  return /^\|(\s*:?-{2,}:?\s*\|)+\s*$/.test(line.trim()) || /^\|(\s*:?-+:?\s*\|)+\s*$/.test(line.trim());
+}
+
+function renderMarkdown(md) {
+  const lines = md.replace(/\r\n/g, "\n").split("\n");
+  const out = [];
+  let listStack = [];
+  let i = 0;
+
+  function closeLists() {
+    while (listStack.length) { out.push("</ul>"); listStack.pop(); }
+  }
+
+  while (i < lines.length) {
+    const line = lines[i];
+
+    // table
+    if (/^\|.*\|\s*$/.test(line) && i + 1 < lines.length && isTableSeparator(lines[i + 1])) {
+      closeLists();
+      const headerCells = splitTableRow(line);
+      out.push('<div class="table-wrap"><table><thead><tr>' +
+        headerCells.map(c => `<th>${inlineFormat(c)}</th>`).join("") + "</tr></thead><tbody>");
+      i += 2;
+      while (i < lines.length && /^\|.*\|\s*$/.test(lines[i])) {
+        const cells = splitTableRow(lines[i]);
+        out.push("<tr>" + cells.map(c => `<td>${inlineFormat(c)}</td>`).join("") + "</tr>");
+        i++;
+      }
+      out.push("</tbody></table></div>");
+      continue;
+    }
+
+    // heading
+    let m = line.match(/^(#{1,6})\s+(.*)$/);
+    if (m) {
+      closeLists();
+      const level = m[1].length;
+      out.push(`<h${level}>${inlineFormat(m[2])}</h${level}>`);
+      i++;
+      continue;
+    }
+
+    // horizontal rule
+    if (/^-{3,}\s*$/.test(line.trim())) {
+      closeLists();
+      out.push("<hr>");
+      i++;
+      continue;
+    }
+
+    // blockquote
+    if (/^>\s?/.test(line)) {
+      closeLists();
+      const quoteLines = [];
+      while (i < lines.length && /^>\s?/.test(lines[i])) {
+        quoteLines.push(lines[i].replace(/^>\s?/, ""));
+        i++;
+      }
+      out.push("<blockquote><p>" + quoteLines.map(inlineFormat).join("<br>") + "</p></blockquote>");
+      continue;
+    }
+
+    // bullet list
+    m = line.match(/^( *)-\s+(.*)$/);
+    if (m) {
+      const level = Math.floor(m[1].length / 2);
+      while (listStack.length && listStack[listStack.length - 1] > level) {
+        out.push("</ul>");
+        listStack.pop();
+      }
+      if (!listStack.length || listStack[listStack.length - 1] < level) {
+        out.push("<ul>");
+        listStack.push(level);
+      }
+      out.push(`<li>${inlineFormat(m[2])}</li>`);
+      i++;
+      continue;
+    }
+
+    // blank line
+    if (line.trim() === "") {
+      closeLists();
+      i++;
+      continue;
+    }
+
+    // paragraph
+    closeLists();
+    const paraLines = [line];
+    i++;
+    while (
+      i < lines.length && lines[i].trim() !== "" &&
+      !/^#{1,6}\s/.test(lines[i]) && !/^\s*-\s/.test(lines[i]) &&
+      !/^\|/.test(lines[i]) && !/^>/.test(lines[i]) && !/^-{3,}\s*$/.test(lines[i].trim())
+    ) {
+      paraLines.push(lines[i]);
+      i++;
+    }
+    out.push("<p>" + paraLines.map(inlineFormat).join("<br>") + "</p>");
+  }
+  closeLists();
+  return out.join("\n");
+}
+
+function buildSidebar() {
+  const nav = document.getElementById("sidebar");
+  const groups = [...new Set(DOCS.map(d => d.group))];
+  groups.forEach(group => {
+    const label = document.createElement("div");
+    label.className = "group-label";
+    label.textContent = group;
+    nav.appendChild(label);
+    DOCS.filter(d => d.group === group).forEach(doc => {
+      const btn = document.createElement("button");
+      btn.className = "doc-item";
+      btn.textContent = doc.title;
+      btn.dataset.path = doc.path;
+      btn.addEventListener("click", () => loadDoc(doc));
+      nav.appendChild(btn);
+    });
+  });
+}
+
+async function loadDoc(doc) {
+  document.querySelectorAll(".doc-item").forEach(el => {
+    el.classList.toggle("active", el.dataset.path === doc.path);
+  });
+  const content = document.getElementById("content");
+  content.className = "state-msg";
+  content.textContent = "読み込み中...";
+  location.hash = encodeURIComponent(doc.path);
+
+  try {
+    const res = await fetch(doc.path);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const text = await res.text();
+    content.className = "";
+    content.innerHTML = renderMarkdown(text);
+  } catch (err) {
+    content.className = "state-msg error";
+    content.textContent =
+      "読み込みに失敗しました: " + err.message +
+      "\n\n(file:// で直接開いている場合、ブラウザのCORS制限によりfetchできません。" +
+      "ローカルサーバー経由、またはGitHub Pages経由でアクセスしてください。)";
+  }
+}
+
+buildSidebar();
+
+const initialPath = location.hash ? decodeURIComponent(location.hash.slice(1)) : null;
+const initialDoc = DOCS.find(d => d.path === initialPath) || DOCS[0];
+loadDoc(initialDoc);
+</script>
+</body>
+</html>
