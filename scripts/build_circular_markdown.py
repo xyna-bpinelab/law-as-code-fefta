@@ -29,6 +29,12 @@ CIRCULARS = [
         "source_url": "https://www.meti.go.jp/policy/anpo/law_document/tutatu/26fy/kamotsu-kaishaku.pdf",
         "note": "「輸出貿易管理令の運用について」１－１（７）（イ）の別掲表",
     },
+    {
+        "pdf": "gijutsu-kaishaku.pdf",
+        "title": "外為令別表（貨物等省令を含む。）中解釈を要する語",
+        "source_url": "https://www.meti.go.jp/policy/anpo/law_document/tutatu/t10kaisei/gijutsu-kaishaku.pdf",
+        "note": "外国為替及び外国貿易法第25条第1項及び外国為替令第17条第2項の規定に基づき許可を要する技術を提供する取引又は行為について（平成4年12月21日付け4貿局第492号）別紙1",
+    },
 ]
 
 
