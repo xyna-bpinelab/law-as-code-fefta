@@ -9,7 +9,7 @@ APIを呼び出して判定・表示する。
 
 使用方法:
     export TYPESAFE_API_KEY="..."
-    pip install typesafe-sdk pdfplumber
+    pip install typesafe-sdk openpyxl
     python3 scripts/demo_server.py [--port 8800]
     -> ブラウザで http://127.0.0.1:8800 を開く
 
@@ -19,8 +19,10 @@ API:
            という分類スクリーニング結果を返す（規制基準の該非判定では
            ない。どの項番で該非判定すべきかを絞り込むための一次分類）
     POST /api/stage2  {"description": "...", "row_label": "九"}
-        -> 指定行を号単位に分解し、貨物等省令・用語解釈PDFを判定材料に
-           加えた、実際の該非判定結果を返す
+        -> 指定行を号単位に分解し、METI公式マトリクス表
+           （kamotsu_matrix_*.xlsx）から号ごとに正確対応付けられた
+           貨物等省令の条文・用語解釈を判定材料に加えた、実際の
+           該非判定結果を返す
 """
 
 from __future__ import annotations
@@ -35,14 +37,12 @@ from urllib.parse import urlparse
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
-from core.kaishaku_lookup import find_interpretation_for_row, kanji_row_label_to_zenkaku  # noqa: E402
 from core.list_classifier import classify_item, load_table_rows  # noqa: E402
-from core.ministerial_spec_lookup import find_spec_for_row  # noqa: E402
+from core.matrix_lookup import load_matrix_entries  # noqa: E402
 from core.predicate_extractor import classify_subitems, extract_subitems  # noqa: E402
 
 XML_PATH = REPO_ROOT / "jurisdictions/jp/raw/cabinet_orders/324CO0000000378_20260605_令和八年政令第百九十四号.xml"
-MINISTERIAL_XML_PATH = REPO_ROOT / "jurisdictions/jp/raw/ministerial_orders/403M50000400049_20260214_令和七年経済産業省令第七十二号.xml"
-KAISHAKU_PDF_PATH = REPO_ROOT / "jurisdictions/jp/raw/circulars/kamotsu-kaishaku.pdf"
+MATRIX_XLSX_PATH = REPO_ROOT / "jurisdictions/jp/raw/matrix/kamotsu_matrix_20260214.xlsx"
 STATIC_DIR = Path(__file__).resolve().parent / "demo_static"
 THRESHOLD = 0.5
 
@@ -73,6 +73,13 @@ def get_rows():
     if _rows_cache is None:
         _rows_cache = load_table_rows(XML_PATH)
     return _rows_cache
+
+
+def get_row_id_by_label(row_label: str):
+    for row in get_rows():
+        if row.label == row_label:
+            return row.row_id
+    return None
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -166,30 +173,23 @@ class Handler(BaseHTTPRequestHandler):
             })
             return
 
-        spec = find_spec_for_row(MINISTERIAL_XML_PATH, row_label=row_label)
-
-        kaishaku = None
-        if KAISHAKU_PDF_PATH.exists():
-            try:
-                zenkaku = kanji_row_label_to_zenkaku(row_label)
-                kaishaku = find_interpretation_for_row(KAISHAKU_PDF_PATH, row_label=zenkaku)
-            except ImportError:
-                kaishaku = None  # pdfplumber未インストール
+        row_id = get_row_id_by_label(row_label)
+        matrix_entries = load_matrix_entries(MATRIX_XLSX_PATH, row_id) if row_id else []
+        matrix_term_count = sum(len(e.terms) for e in matrix_entries)
+        matrix_spec_count = sum(1 for e in matrix_entries if e.ministerial_text)
 
         matches = classify_subitems(
             get_client(), description, subitems,
             stage1_row_matches=stage1_by_id, threshold=THRESHOLD,
-            ministerial_spec_text=spec.full_text if spec else None,
-            kaishaku_interpretation=kaishaku,
+            matrix_entries=matrix_entries,
         )
 
         self._send_json({
             "row_label": row_label,
             "threshold": THRESHOLD,
-            "ministerial_spec_found": spec is not None,
-            "ministerial_spec_article": spec.article_title if spec else None,
-            "kaishaku_found": kaishaku is not None,
-            "kaishaku_term_count": len(kaishaku.terms) if kaishaku else 0,
+            "matrix_found": bool(matrix_entries),
+            "matrix_spec_item_count": matrix_spec_count,
+            "matrix_term_count": matrix_term_count,
             "subitems": [m.to_dict() for m in matches],
         })
 

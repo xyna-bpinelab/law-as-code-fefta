@@ -98,17 +98,17 @@ function renderStage2(data) {
   currentStage2Threshold = data.threshold;
   stage2Meta.innerHTML = "";
   const specBadge = document.createElement("span");
-  specBadge.className = "badge " + (data.ministerial_spec_found ? "ok" : "off");
-  specBadge.textContent = data.ministerial_spec_found
-    ? `貨物等省令 ${data.ministerial_spec_article} を反映`
-    : "貨物等省令: 対応条文なし";
+  specBadge.className = "badge " + (data.matrix_spec_item_count > 0 ? "ok" : "off");
+  specBadge.textContent = data.matrix_spec_item_count > 0
+    ? `マトリクス表: 貨物等省令を${data.matrix_spec_item_count}号に反映`
+    : "マトリクス表: 対応する貨物等省令条文なし";
   stage2Meta.appendChild(specBadge);
 
   const kaishakuBadge = document.createElement("span");
-  kaishakuBadge.className = "badge " + (data.kaishaku_found ? "ok" : "off");
-  kaishakuBadge.textContent = data.kaishaku_found
-    ? `用語解釈PDF ${data.kaishaku_term_count}語を反映`
-    : "用語解釈PDF: 対応なし";
+  kaishakuBadge.className = "badge " + (data.matrix_term_count > 0 ? "ok" : "off");
+  kaishakuBadge.textContent = data.matrix_term_count > 0
+    ? `マトリクス表: 用語解釈${data.matrix_term_count}件を反映`
+    : "マトリクス表: 用語解釈なし";
   stage2Meta.appendChild(kaishakuBadge);
 
   stage2Results.innerHTML = "";

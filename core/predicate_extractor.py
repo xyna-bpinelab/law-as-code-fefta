@@ -283,7 +283,8 @@ def classify_subitems(client, product_description: str, subitems: list[SubItem],
                        stage1_row_matches: Optional[dict] = None,
                        threshold: float = 0.5, model: Optional[str] = None,
                        ministerial_spec_text: Optional[str] = None,
-                       kaishaku_interpretation=None) -> list[SubItemMatch]:
+                       kaishaku_interpretation=None,
+                       matrix_entries=None) -> list[SubItemMatch]:
     """号単位でJev(Noul)に独立して問い合わせ、除外節（hard_rule）で
     機械的に抑制できるものは抑制した上で、確率降順に返す。
 
@@ -297,26 +298,26 @@ def classify_subitems(client, product_description: str, subitems: list[SubItem],
         threshold: 「該当」とみなす確率閾値。excludes_rows/excludes_self_items
             の抑制判定にも同じ閾値を用いる。
         model: TypeSafeのモデル名（省略時は既定）。
-        ministerial_spec_text: 貨物等省令の対応条文全文
-            （ministerial_spec_lookup.find_spec_for_row() で取得）。
-            別表第一の号テキストだけでは「経済産業省令で定める仕様のもの」
-            という委任先の具体的な数値基準（周波数・耐熱温度等）が分から
-            ないため、指定した場合はJevへのstateに含めて判定材料とする。
-            省略時は別表の号テキストのみで判定する（従来動作）。
-        kaishaku_interpretation: kaishaku_lookup.find_interpretation_for_row()
-            が返す RowInterpretation（運用通達別紙「輸出令別表第１の解釈」
-            の、この行に対応する用語解釈一覧）。指定した場合、
-            kaishaku_lookup.match_terms_for_text() で各号のテキストに
-            実際に現れる用語だけを号ごとに絞り込み、その号自身の
-            instructionsに個別に埋め込む（項全体をまとめて共有stateに
-            入れると無関係な号に他の号の用語解釈が混入してノイズになる
-            ため、号単位でマッチングする）。
+        matrix_entries: core.matrix_lookup.load_matrix_entries() が返す
+            MatrixEntry のリスト（METI公式マトリクス表由来）。指定した
+            場合、item_idで号ごとに正確に対応付けられた貨物等省令テキスト・
+            用語解釈をそのままJevのinstructionsに渡す。文字列マッチングに
+            よる推測が不要で、ministerial_spec_text/kaishaku_interpretation
+            より優先して使われる（両者はマトリクス表がその行をカバーして
+            いない場合のフォールバック）。
+        ministerial_spec_text: 貨物等省令の対応条文全文（レガシー、
+            ministerial_spec_lookup.find_spec_for_row() で取得。PDF/XML
+            座標解析による行全体の推測のため、matrix_entriesがあれば
+            そちらを優先する）。省略時は無視される。
+        kaishaku_interpretation: レガシー、kaishaku_lookup由来のRowInterpretation
+            （matrix_entriesがあれば無視される）。
 
     Returns:
         probability 降順の SubItemMatch のリスト。
     """
     from typesafe_sdk import Noul
     from .kaishaku_lookup import match_terms_for_text
+    from .matrix_lookup import find_entry as _find_matrix_entry
 
     questions = {}
     for it in subitems:
@@ -325,18 +326,34 @@ def classify_subitems(client, product_description: str, subitems: list[SubItem],
             f"次の製品・技術の説明は、下記の号（項の一部）が定める貨物・技術に該当するか。\n"
             f"【{it.label}】{it.text}"
         )
-        if ministerial_spec_text:
+
+        matrix_entry = _find_matrix_entry(matrix_entries, it.item_id) if matrix_entries else None
+
+        if matrix_entry is not None and matrix_entry.ministerial_text:
+            instructions += (
+                "\n\nなお、この号は「経済産業省令で定める仕様のもの」という要件を含む場合があり、"
+                "その具体的な数値基準は下記のとおりである（METI公式マトリクス表より、この号に"
+                f"正確に対応する条文）。\n【貨物等省令 {'、'.join(matrix_entry.ministerial_refs) or ''}】"
+                f"{matrix_entry.ministerial_text}"
+            )
+        elif ministerial_spec_text:
             instructions += (
                 "\n\nなお、この項は「経済産業省令で定める仕様のもの」という要件を含む場合があり、"
                 "その具体的な数値基準はstateの ministerial_order_spec に記載されている。"
                 "該当する記述があれば必ず参照して判定すること。"
             )
-        if kaishaku_interpretation is not None:
+
+        if matrix_entry is not None and matrix_entry.terms:
+            instructions += "\n\nこの号で使われる用語の定義（METI公式マトリクス表より）:"
+            for term, definition in matrix_entry.terms:
+                instructions += f"\n・「{term}」: {definition}"
+        elif kaishaku_interpretation is not None:
             matched_terms = match_terms_for_text(kaishaku_interpretation, it.text)
             if matched_terms:
                 instructions += "\n\nこの号で使われる用語の定義（運用通達別紙より）:"
                 for td in matched_terms:
                     instructions += f"\n・「{td.term}」: {td.definition}"
+
         questions[key] = Noul(
             instructions=instructions,
             criteria={
@@ -346,7 +363,7 @@ def classify_subitems(client, product_description: str, subitems: list[SubItem],
         )
 
     state: dict = {"product_description": product_description}
-    if ministerial_spec_text:
+    if ministerial_spec_text and not matrix_entries:
         state["ministerial_order_spec"] = ministerial_spec_text
 
     kwargs = {"state": state, "questions": questions}
