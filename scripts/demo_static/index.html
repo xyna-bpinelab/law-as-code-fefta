@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>輸出令別表第一 該非判定デモ</title>
+<style>
+  :root {
+    --bg: #f7f7f5;
+    --panel-bg: #ffffff;
+    --text: #1c1c1c;
+    --text-dim: #6b6b6b;
+    --border: #e2e0db;
+    --accent: #8a3324;
+    --accent-bg: #fbeae6;
+    --ok: #2f7a3d;
+    --ok-bg: #e8f4ea;
+    --warn: #a3690a;
+    --warn-bg: #fbf1e0;
+    --bar-track: #ece9e2;
+    --code-bg: #f0efe9;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #16161a;
+      --panel-bg: #1e1e23;
+      --text: #ececec;
+      --text-dim: #9a9a9a;
+      --border: #33333a;
+      --accent: #e2836f;
+      --accent-bg: #3a2420;
+      --ok: #7fd08a;
+      --ok-bg: #1c3320;
+      --warn: #e0b25c;
+      --warn-bg: #3a2f18;
+      --bar-track: #2a2a30;
+      --code-bg: #26262c;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    background: var(--bg); color: var(--text);
+    font-family: "Hiragino Sans", "Yu Gothic", "Noto Sans JP", -apple-system, BlinkMacSystemFont, sans-serif;
+  }
+  body {
+    padding: env(safe-area-inset-top,0px) env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-inset-left,0px);
+  }
+  .wrap { max-width: 880px; margin: 0 auto; padding: 28px 20px 80px; }
+  header { margin-bottom: 22px; }
+  h1 { font-size: 19px; margin: 0 0 4px; }
+  .sub { font-size: 13px; color: var(--text-dim); line-height: 1.6; }
+
+  .panel {
+    background: var(--panel-bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px;
+    margin-bottom: 18px;
+  }
+  textarea {
+    width: 100%;
+    min-height: 90px;
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--bg);
+    color: var(--text);
+    font-size: 14px;
+    font-family: inherit;
+    resize: vertical;
+  }
+  .row { display: flex; gap: 10px; align-items: center; margin-top: 10px; flex-wrap: wrap; }
+  button {
+    background: var(--accent);
+    color: white;
+    border: none;
+    border-radius: 7px;
+    padding: 9px 18px;
+    font-size: 14px;
+    cursor: pointer;
+  }
+  button:disabled { opacity: 0.5; cursor: default; }
+  button.ghost {
+    background: transparent;
+    color: var(--text-dim);
+    border: 1px solid var(--border);
+  }
+  .hint { font-size: 12px; color: var(--text-dim); }
+
+  .status {
+    font-size: 13px;
+    color: var(--text-dim);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 10px;
+  }
+  .spinner {
+    width: 14px; height: 14px;
+    border: 2px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .error-box {
+    background: var(--accent-bg);
+    color: var(--accent);
+    border-radius: 8px;
+    padding: 10px 12px;
+    font-size: 13px;
+    margin-top: 10px;
+  }
+
+  h2 { font-size: 14px; margin: 0 0 12px; color: var(--text-dim); font-weight: 600; }
+
+  .bar-row {
+    display: grid;
+    grid-template-columns: 84px 1fr 56px;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 0;
+    cursor: pointer;
+    border-radius: 6px;
+  }
+  .bar-row:hover { background: var(--code-bg); }
+  .bar-row .label { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .bar-row .label.selected { color: var(--accent); font-weight: 700; }
+  .bar-track { height: 9px; background: var(--bar-track); border-radius: 5px; overflow: hidden; }
+  .bar-fill { height: 100%; border-radius: 5px; background: var(--text-dim); }
+  .bar-fill.hit { background: var(--accent); }
+  .bar-row .pct { font-size: 12px; color: var(--text-dim); text-align: right; font-variant-numeric: tabular-nums; }
+
+  .sub-meta { font-size: 12px; color: var(--text-dim); margin-bottom: 10px; display: flex; gap: 14px; flex-wrap: wrap; }
+  .badge { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 999px; font-size: 11px; }
+  .badge.ok { background: var(--ok-bg); color: var(--ok); }
+  .badge.off { background: var(--code-bg); color: var(--text-dim); }
+
+  .item-row {
+    border-bottom: 1px solid var(--border);
+    padding: 10px 0;
+  }
+  .item-row:last-child { border-bottom: none; }
+  .item-head { display: flex; align-items: baseline; gap: 8px; }
+  .item-head .label { font-weight: 700; font-size: 13px; min-width: 70px; }
+  .item-head .pct { font-size: 12px; color: var(--text-dim); margin-left: auto; font-variant-numeric: tabular-nums; }
+  .tag { font-size: 11px; padding: 1px 7px; border-radius: 999px; }
+  .tag.hit { background: var(--ok-bg); color: var(--ok); }
+  .tag.suppressed { background: var(--code-bg); color: var(--text-dim); text-decoration: line-through; }
+  .tag.review { background: var(--warn-bg); color: var(--warn); }
+  .reason { font-size: 12px; color: var(--text-dim); margin-top: 4px; padding-left: 78px; }
+
+  .empty { font-size: 13px; color: var(--text-dim); padding: 20px 0; text-align: center; }
+
+  @media (max-width: 560px) {
+    .bar-row { grid-template-columns: 60px 1fr 46px; }
+    .item-head .label { min-width: 56px; }
+    .reason { padding-left: 0; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>輸出令別表第一 該非判定デモ</h1>
+    <div class="sub">
+      製品・技術の自然文説明を入力すると、TypeSafe AI (Jev) が別表第一の各項番を独立に評価します（複数項番の同時該当あり）。
+      項番をクリックすると、号単位まで分解し、貨物等省令の数値仕様・運用通達の用語解釈・除外規定のhard_rule抑制を反映した細粒度判定を表示します。
+      <br>結果はあくまで一次スクリーニングであり、実際の該非判定の代替ではありません。
+    </div>
+  </header>
+
+  <div class="panel">
+    <textarea id="description" placeholder="例: 多段ロケットの製造に使用される、チタン合金部品の等方圧成形（アイソスタチックプレス）装置。ロケットエンジンの構造部材製造工程で使用される。"></textarea>
+    <div class="row">
+      <button id="runBtn">該非判定を実行</button>
+      <button id="clearBtn" class="ghost">クリア</button>
+      <span class="hint">閾値0.5以上を「該当候補」として表示します</span>
+    </div>
+    <div id="stage1Status" class="status" hidden></div>
+    <div id="stage1Error" class="error-box" hidden></div>
+  </div>
+
+  <div class="panel" id="stage1Panel" hidden>
+    <h2>Stage1 — 項番レベル判定（全17項）</h2>
+    <div id="stage1Results"></div>
+  </div>
+
+  <div class="panel" id="stage2Panel" hidden>
+    <h2 id="stage2Title">Stage2 — 号単位の細粒度判定</h2>
+    <div id="stage2Meta" class="sub-meta"></div>
+    <div id="stage2Status" class="status" hidden></div>
+    <div id="stage2Error" class="error-box" hidden></div>
+    <div id="stage2Results"></div>
+  </div>
+</div>
+<script src="/app.js"></script>
+</body>
+</html>

@@ -27,30 +27,10 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
-from core.kaishaku_lookup import find_interpretation_for_row  # noqa: E402
+from core.kaishaku_lookup import find_interpretation_for_row, kanji_row_label_to_zenkaku  # noqa: E402
 from core.list_classifier import classify_item, load_table_rows  # noqa: E402
 from core.ministerial_spec_lookup import find_spec_for_row  # noqa: E402
 from core.predicate_extractor import classify_subitems, extract_subitems  # noqa: E402
-
-_KANJI_DIGITS = {"〇": "0", "一": "1", "二": "2", "三": "3", "四": "4",
-                 "五": "5", "六": "6", "七": "7", "八": "8", "九": "9"}
-_ZENKAKU_DIGITS = str.maketrans("0123456789", "０１２３４５６７８９")
-
-
-def kanji_row_label_to_zenkaku(label: str) -> str:
-    """list_classifier.TableRow.label の漢数字表記（例: "九", "三の二"）を、
-    kaishaku PDF側で使われる全角数字表記（例: "９", "３の２"）に変換する。
-    位取り記数法（十/百）は使わず、桁ごとに読み替える簡易変換
-    （別表第一の項番号は1桁または「十◯」形式のみのため、
-    ここでは単純な1桁変換で十分な範囲に限定する）。"""
-    parts = label.split("の")
-    out_parts = []
-    for p in parts:
-        if all(ch in _KANJI_DIGITS for ch in p):
-            out_parts.append("".join(_KANJI_DIGITS[ch] for ch in p).translate(_ZENKAKU_DIGITS))
-        else:
-            return label  # 変換不能ならそのまま返す（呼び出し側でNOT FOUND扱いになる）
-    return "の".join(out_parts)
 
 
 def print_stage2(title: str, stage2_matches, threshold: float) -> None:

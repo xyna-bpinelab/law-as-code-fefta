@@ -25,11 +25,33 @@ from typing import Optional
 __all__ = [
     "TermDefinition", "RowInterpretation",
     "find_interpretation_for_row", "match_terms_for_text",
+    "kanji_row_label_to_zenkaku",
 ]
 
 _ROW_NUM_RE = re.compile(r"^[０-９]{1,3}(の[０-９]{1,2})?$")
 _ROW_NUM_COL_X0, _ROW_NUM_COL_X1 = 30, 100
 _HEADER_MARKERS = ("解釈を要する語", "解 釈 を 要 す る 語")
+
+_KANJI_DIGITS_TO_ARABIC = {"〇": "0", "一": "1", "二": "2", "三": "3", "四": "4",
+                            "五": "5", "六": "6", "七": "7", "八": "8", "九": "9"}
+_ZENKAKU_DIGITS = str.maketrans("0123456789", "０１２３４５６７８９")
+
+
+def kanji_row_label_to_zenkaku(label: str) -> str:
+    """list_classifier.TableRow.label の漢数字表記（例: "九", "三の二"）を、
+    kaishaku PDF側で使われる全角数字表記（例: "９", "３の２"）に変換する。
+    位取り記数法（十/百）は使わず、桁ごとに読み替える簡易変換
+    （別表第一の項番号は1桁または「十◯」形式のみのため、
+    ここでは単純な1桁変換で十分な範囲に限定する）。変換不能な場合は
+    入力をそのまま返す（呼び出し側でNOT FOUND扱いになる）。"""
+    parts = label.split("の")
+    out_parts = []
+    for p in parts:
+        if p and all(ch in _KANJI_DIGITS_TO_ARABIC for ch in p):
+            out_parts.append("".join(_KANJI_DIGITS_TO_ARABIC[ch] for ch in p).translate(_ZENKAKU_DIGITS))
+        else:
+            return label
+    return "の".join(out_parts)
 
 
 @dataclass
