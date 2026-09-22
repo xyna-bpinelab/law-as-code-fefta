@@ -3,75 +3,31 @@
   "prompt_id": "jp_fefta_N500_SPECIFIC_GENERAL_CHECK",
   "tree_id": "jp_fefta_inclusive_license_decision_tree",
   "node_id": "N500_SPECIFIC_GENERAL_CHECK",
-  "title": "特定包括許可の適用要件判定（Jevプロンプト）",
-  "version": "1.0.0",
+  "title": "特定包括許可の適用要件判定（Jevプロンプト / TypeSafe Noul）",
+  "version": "2.0.0",
   "target_jurisdiction": "JP",
   "evaluator": "hybrid_jev",
+  "provider": "typesafe_ai",
+  "model": "jev-latest",
   "legal_basis": [
     "包括輸出許可取扱要領 第2の(3)"
   ],
   "context_prompt": "取引先・仕向地との間に反復・継続的な取引関係があり、かつ当該仕向地が特定包括許可の対象地域として認められていることを評価します。",
-  "system_prompt": "あなたは日本の安全保障貿易管理における特定包括許可の適用可否を判定するJevエージェントです。input として与えられる取引情報・仕向地情報のみを判定根拠とし、資料に記載のない事実を推測で補ってはなりません。判定基準は次の2条件すべてを満たすことです。(1) 特定の取引先・子会社等との間で反復・継続的な取引関係が存在すること（単発取引ではないこと）。(2) 仕向地が特定包括許可の対象として認められた地域に該当すること。出力は必ず output_schema に適合するJSONのみとし、JSON以外の説明文を出力してはなりません。",
-  "input_schema": {
-    "type": "object",
-    "required": ["transaction", "destination"],
-    "additionalProperties": false,
-    "properties": {
-      "transaction": {
-        "type": "object",
-        "required": ["is_continuous_business"],
-        "properties": {
-          "is_continuous_business": {
-            "type": "boolean",
-            "description": "特定の取引先・子会社等との間で反復・継続的な取引関係が存在するか"
-          }
-        }
-      },
-      "destination": {
-        "type": "object",
-        "required": ["is_permitted_region_for_specific"],
-        "properties": {
-          "is_permitted_region_for_specific": {
-            "type": "boolean",
-            "description": "仕向地が特定包括許可の対象として認められた地域に該当するか"
-          }
-        }
-      }
+  "state_fields": ["transaction", "destination"],
+  "question": {
+    "type": "noul",
+    "key": "applies",
+    "instructions": "この取引に特定包括許可（包括輸出許可取扱要領第2の(3)）が適用できるか。stateで与えられた取引情報・仕向地情報のみを根拠とし、記載のない事実を推測で補ってはならない。",
+    "criteria": {
+      "true": "特定の取引先・子会社等との間で反復・継続的な取引関係が存在し（単発取引でなく）、かつ仕向地が特定包括許可の対象として認められた地域に該当する（両条件を満たす）",
+      "false": "継続的取引関係がない、または仕向地が特定包括許可の対象地域に該当しない"
     }
   },
+  "decision_threshold": 0.5,
   "evaluation_conditions": [
     "transaction.is_continuous_business == true",
     "destination.is_permitted_region_for_specific == true"
   ],
-  "output_schema": {
-    "type": "object",
-    "required": ["result", "confidence", "reasoning", "next"],
-    "additionalProperties": false,
-    "properties": {
-      "result": {
-        "type": "boolean",
-        "description": "evaluation_conditions の2条件すべてを満たす場合にtrue"
-      },
-      "confidence": {
-        "type": "number",
-        "minimum": 0,
-        "maximum": 1,
-        "description": "判定の確信度"
-      },
-      "reasoning": {
-        "type": "string",
-        "description": "各条件の充足・不充足の根拠を簡潔に記述"
-      },
-      "next": {
-        "type": "string",
-        "enum": [
-          "RESULT_SPECIFIC_INCLUSIVE_LICENSE_APPLICABLE",
-          "RESULT_INDIVIDUAL_LICENSE_REQUIRED"
-        ],
-        "description": "inclusive_license_tree.json の N500_SPECIFIC_GENERAL_CHECK.next に対応する遷移先ノードID"
-      }
-    }
-  },
   "next_mapping": {
     "true": "RESULT_SPECIFIC_INCLUSIVE_LICENSE_APPLICABLE",
     "false": "RESULT_INDIVIDUAL_LICENSE_REQUIRED"

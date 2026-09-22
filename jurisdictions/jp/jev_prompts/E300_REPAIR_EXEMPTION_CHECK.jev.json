@@ -3,82 +3,33 @@
   "prompt_id": "jp_fefta_E300_REPAIR_EXEMPTION_CHECK",
   "tree_id": "jp_fefta_exemption_decision_tree",
   "node_id": "E300_REPAIR_EXEMPTION_CHECK",
-  "title": "無償修理・交換品特例の適用判定（Jevプロンプト）",
-  "version": "1.0.0",
+  "title": "無償修理・交換品特例の適用判定（Jevプロンプト / TypeSafe Noul）",
+  "version": "2.0.0",
   "target_jurisdiction": "JP",
   "evaluator": "hybrid_jev",
+  "provider": "typesafe_ai",
+  "model": "jev-latest",
   "legal_basis": [
     "輸出貿易管理令 第4条第1項第5号",
     "輸出許可取扱要領 第3"
   ],
   "context_prompt": "輸入した貨物を無償で修理して送り返す取引、または無償で交換品を送付する取引の実態を評価します。",
-  "system_prompt": "あなたは日本の安全保障貿易管理における無償修理・交換品特例（輸出令第4条第1項第5号）の適用可否を判定するJevエージェントです。input として与えられる取引情報・貨物情報のみを判定根拠とし、資料に記載のない事実を推測で補ってはなりません。判定基準は次の3条件すべてを満たすことです。(1) 取引の理由が「輸入貨物の無償修理後の返送」または「無償交換品の送付」のいずれかであること。(2) 当該取引が無償（対価の授受を伴わない）であること。(3) 輸出される貨物の仕様が輸入時（または元の交換対象品）から変更されていないこと（性能向上や仕様変更を伴う場合は対象外）。出力は必ず output_schema に適合するJSONのみとし、JSON以外の説明文を出力してはなりません。",
-  "input_schema": {
-    "type": "object",
-    "required": ["transaction", "item"],
-    "additionalProperties": false,
-    "properties": {
-      "transaction": {
-        "type": "object",
-        "required": ["reason", "is_free_of_charge"],
-        "properties": {
-          "reason": {
-            "type": "string",
-            "enum": ["REPAIR_RETURN", "FREE_REPLACEMENT", "OTHER"],
-            "description": "取引理由。無償修理後の返送はREPAIR_RETURN、無償交換品の送付はFREE_REPLACEMENT、それ以外はOTHER"
-          },
-          "is_free_of_charge": {
-            "type": "boolean",
-            "description": "当該取引が無償（対価の授受を伴わない）か"
-          }
-        }
-      },
-      "item": {
-        "type": "object",
-        "required": ["spec_changed"],
-        "properties": {
-          "spec_changed": {
-            "type": "boolean",
-            "description": "輸出される貨物の仕様が輸入時（または元の交換対象品）から変更されているか"
-          }
-        }
-      }
+  "state_fields": ["transaction", "item"],
+  "question": {
+    "type": "noul",
+    "key": "applies",
+    "instructions": "この取引に無償修理・交換品特例（輸出貿易管理令第4条第1項第5号）が適用できるか。stateで与えられた取引情報・貨物情報のみを根拠とし、記載のない事実を推測で補ってはならない。",
+    "criteria": {
+      "true": "取引理由が「輸入貨物の無償修理後の返送」または「無償交換品の送付」のいずれかであり、かつ当該取引が無償（対価の授受を伴わない）であり、かつ輸出される貨物の仕様が輸入時（または元の交換対象品）から変更されていない（3条件をすべて満たす）",
+      "false": "有償取引である、性能向上・仕様変更を伴う、またはそもそも修理・交換品の送付ではない"
     }
   },
+  "decision_threshold": 0.5,
   "evaluation_conditions": [
     "transaction.reason == 'REPAIR_RETURN' or transaction.reason == 'FREE_REPLACEMENT'",
     "transaction.is_free_of_charge == true",
     "item.spec_changed == false"
   ],
-  "output_schema": {
-    "type": "object",
-    "required": ["result", "confidence", "reasoning", "next"],
-    "additionalProperties": false,
-    "properties": {
-      "result": {
-        "type": "boolean",
-        "description": "evaluation_conditions の3条件すべてを満たす場合にtrue"
-      },
-      "confidence": {
-        "type": "number",
-        "minimum": 0,
-        "maximum": 1,
-        "description": "判定の確信度"
-      },
-      "reasoning": {
-        "type": "string",
-        "description": "各条件の充足・不充足の根拠を簡潔に記述"
-      },
-      "next": {
-        "type": "string",
-        "enum": [
-          "RESULT_EXEMPTION_APPLICABLE_REPAIR",
-          "E400_BAGGAGE_EXEMPTION_CHECK"
-        ],
-        "description": "exemption_tree.json の E300_REPAIR_EXEMPTION_CHECK.next に対応する遷移先ID（falseの場合は次の判定ノードE400へ継続する）"
-      }
-    }
-  },
   "next_mapping": {
     "true": "RESULT_EXEMPTION_APPLICABLE_REPAIR",
     "false": "E400_BAGGAGE_EXEMPTION_CHECK"

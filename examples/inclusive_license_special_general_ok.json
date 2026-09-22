@@ -1,0 +1,16 @@
+{
+  "item": {
+    "is_list_controlled": true,
+    "is_kokushi_kawamono": false,
+    "is_sensitive_list": true
+  },
+  "company": {
+    "has_special_general_license": true
+  },
+  "destination": {
+    "is_embargoed_country": false
+  },
+  "transaction": {
+    "is_suspicious": false
+  }
+}

@@ -24,6 +24,7 @@
       ],
       "evaluator": "hard_rule",
       "description": "武器（1の項）、告示貨物（Very Sensitive）、および核・化学・生物・ミサイル等の高感度品目は原則として特例全般の対象外となります。",
+      "logic": "OR",
       "conditions": [
         "item.category_number == 1",
         "item.is_kokushi_kawamono == true",

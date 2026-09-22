@@ -3,87 +3,33 @@
   "prompt_id": "jp_fefta_N300_SPECIAL_GENERAL_CHECK",
   "tree_id": "jp_fefta_inclusive_license_decision_tree",
   "node_id": "N300_SPECIAL_GENERAL_CHECK",
-  "title": "特別一般包括許可の適用要件判定（Jevプロンプト）",
-  "version": "1.0.0",
+  "title": "特別一般包括許可の適用要件判定（Jevプロンプト / TypeSafe Noul）",
+  "version": "2.0.0",
   "target_jurisdiction": "JP",
   "evaluator": "hybrid_jev",
+  "provider": "typesafe_ai",
+  "model": "jev-latest",
   "legal_basis": [
     "包括輸出許可取扱要領 第2の(2)",
     "輸出貿易管理令 第4条第1項第3号"
   ],
   "context_prompt": "企業が特別一般包括許可を保持しており、かつ取引先が非懸念国・非懸念顧客であることを評価します。",
-  "system_prompt": "あなたは日本の安全保障貿易管理における特別一般包括許可の適用可否を判定するJevエージェントです。input として与えられる企業情報・仕向地情報・取引情報のみを判定根拠とし、資料に記載のない事実を推測で補ってはなりません。判定基準は次の3条件すべてを満たすことです。(1) 企業が特別一般包括許可の交付を受けていること。(2) 仕向地が禁輸国・懸念国（外為法上の規制対象国）に該当しないこと。(3) 当該取引に最終需要者不明・用途不明・価格異常等の不審な兆候がないこと。出力は必ず output_schema に適合するJSONのみとし、JSON以外の説明文を出力してはなりません。",
-  "input_schema": {
-    "type": "object",
-    "required": ["company", "destination", "transaction"],
-    "additionalProperties": false,
-    "properties": {
-      "company": {
-        "type": "object",
-        "required": ["has_special_general_license"],
-        "properties": {
-          "has_special_general_license": {
-            "type": "boolean",
-            "description": "企業が特別一般包括許可の交付を受けているか"
-          }
-        }
-      },
-      "destination": {
-        "type": "object",
-        "required": ["is_embargoed_country"],
-        "properties": {
-          "is_embargoed_country": {
-            "type": "boolean",
-            "description": "仕向地が禁輸国・懸念国（外為法上の規制対象国）に該当するか"
-          }
-        }
-      },
-      "transaction": {
-        "type": "object",
-        "required": ["is_suspicious"],
-        "properties": {
-          "is_suspicious": {
-            "type": "boolean",
-            "description": "最終需要者不明・用途不明・価格異常等、取引に懸念となる兆候があるか"
-          }
-        }
-      }
+  "state_fields": ["company", "destination", "transaction"],
+  "question": {
+    "type": "noul",
+    "key": "applies",
+    "instructions": "この取引に特別一般包括許可（輸出貿易管理令第4条第1項第3号、包括輸出許可取扱要領第2の(2)）が適用できるか。stateで与えられた企業情報・仕向地情報・取引情報のみを根拠とし、記載のない事実を推測で補ってはならない。",
+    "criteria": {
+      "true": "企業が特別一般包括許可の交付を受けており、かつ仕向地が禁輸国・懸念国に該当せず、かつ当該取引に最終需要者不明・用途不明・価格異常等の不審な兆候がない（3条件をすべて満たす）",
+      "false": "上記3条件のいずれか1つでも満たさない（許可未保有／禁輸・懸念国向け／不審な兆候あり）"
     }
   },
+  "decision_threshold": 0.5,
   "evaluation_conditions": [
     "company.has_special_general_license == true",
     "destination.is_embargoed_country == false",
     "transaction.is_suspicious == false"
   ],
-  "output_schema": {
-    "type": "object",
-    "required": ["result", "confidence", "reasoning", "next"],
-    "additionalProperties": false,
-    "properties": {
-      "result": {
-        "type": "boolean",
-        "description": "evaluation_conditions の3条件すべてを満たす場合にtrue"
-      },
-      "confidence": {
-        "type": "number",
-        "minimum": 0,
-        "maximum": 1,
-        "description": "判定の確信度"
-      },
-      "reasoning": {
-        "type": "string",
-        "description": "各条件の充足・不充足の根拠を簡潔に記述"
-      },
-      "next": {
-        "type": "string",
-        "enum": [
-          "RESULT_SPECIAL_GENERAL_LICENSE_APPLICABLE",
-          "RESULT_INDIVIDUAL_LICENSE_REQUIRED_SENSITIVE"
-        ],
-        "description": "inclusive_license_tree.json の N300_SPECIAL_GENERAL_CHECK.next に対応する遷移先ノードID"
-      }
-    }
-  },
   "next_mapping": {
     "true": "RESULT_SPECIAL_GENERAL_LICENSE_APPLICABLE",
     "false": "RESULT_INDIVIDUAL_LICENSE_REQUIRED_SENSITIVE"

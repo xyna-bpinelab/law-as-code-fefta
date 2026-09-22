@@ -1,0 +1,20 @@
+{
+  "item": {
+    "is_list_controlled": true,
+    "category_number": 5,
+    "is_kokushi_kawamono": false,
+    "is_wmd_related": false,
+    "small_value_limit_jpy": 100000,
+    "is_small_value_excluded": false,
+    "spec_changed": false
+  },
+  "destination": {
+    "is_small_value_excluded_country": false
+  },
+  "transaction": {
+    "contract_value_jpy": 500000,
+    "is_split_shipment": false,
+    "reason": "REPAIR_RETURN",
+    "is_free_of_charge": true
+  }
+}
