@@ -109,6 +109,8 @@
     flex: 1;
     overflow-y: auto;
     min-width: 0;
+    display: flex;
+    flex-direction: column;
   }
   #content {
     max-width: 900px;
@@ -117,6 +119,34 @@
     line-height: 1.85;
     font-size: 15px;
     word-break: break-word;
+    width: 100%;
+  }
+  #content.pdf-view {
+    max-width: none;
+    margin: 0;
+    padding: 0;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+  .pdf-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 18px;
+    border-bottom: 1px solid var(--border);
+    background: var(--panel-bg);
+    font-size: 13px;
+  }
+  .pdf-bar a { color: var(--accent); text-decoration: none; white-space: nowrap; }
+  .pdf-bar a:hover { text-decoration: underline; }
+  #content.pdf-view iframe {
+    flex: 1;
+    border: none;
+    width: 100%;
+    min-height: 0;
   }
   #content h1 { font-size: 22px; margin: 0 0 16px; border-bottom: 1px solid var(--border); padding-bottom: 10px; }
   #content h2 { font-size: 17px; margin: 32px 0 12px; }
@@ -178,12 +208,12 @@
 
 <script>
 const DOCS = [
-  { group: "法律", title: "外国為替及び外国貿易法（外為法）", path: "jurisdictions/jp/processed/markdown/laws/324AC0000000228.md" },
-  { group: "政令", title: "輸出貿易管理令（輸出令）", path: "jurisdictions/jp/processed/markdown/cabinet_orders/324CO0000000378.md" },
-  { group: "省令", title: "貨物等省令", path: "jurisdictions/jp/processed/markdown/ministerial_orders/403M50000400049.md" },
-  { group: "運用通達", title: "輸出貿易管理令の運用について", path: "jurisdictions/jp/processed/markdown/circulars/unyou_tsutatsu.md" },
-  { group: "運用通達", title: "輸出令別表第１の解釈（表）", path: "jurisdictions/jp/processed/markdown/circulars/kamotsu-kaishaku.md" },
-  { group: "運用通達", title: "外為令別表（貨物等省令を含む）中解釈を要する語", path: "jurisdictions/jp/processed/markdown/circulars/gijutsu-kaishaku.md" },
+  { group: "法律", title: "外国為替及び外国貿易法（外為法）", path: "jurisdictions/jp/processed/markdown/laws/324AC0000000228.md", type: "md" },
+  { group: "政令", title: "輸出貿易管理令（輸出令）", path: "jurisdictions/jp/processed/markdown/cabinet_orders/324CO0000000378.md", type: "md" },
+  { group: "省令", title: "貨物等省令", path: "jurisdictions/jp/processed/markdown/ministerial_orders/403M50000400049.md", type: "md" },
+  { group: "運用通達（PDF）", title: "輸出貿易管理令の運用について", path: "jurisdictions/jp/raw/circulars/unyou_tsutatsu.pdf", type: "pdf" },
+  { group: "運用通達（PDF）", title: "輸出令別表第１の解釈（表）", path: "jurisdictions/jp/raw/circulars/kamotsu-kaishaku.pdf", type: "pdf" },
+  { group: "運用通達（PDF）", title: "外為令別表（貨物等省令を含む）中解釈を要する語", path: "jurisdictions/jp/raw/circulars/gijutsu-kaishaku.pdf", type: "pdf" },
 ];
 
 function escapeHtml(s) {
@@ -331,10 +361,19 @@ async function loadDoc(doc) {
     el.classList.toggle("active", el.dataset.path === doc.path);
   });
   const content = document.getElementById("content");
-  content.className = "state-msg";
-  content.textContent = "読み込み中...";
   location.hash = encodeURIComponent(doc.path);
 
+  if (doc.type === "pdf") {
+    content.className = "pdf-view";
+    content.innerHTML =
+      `<div class="pdf-bar"><span>${escapeHtml(doc.title)}</span>` +
+      `<a href="${doc.path}" target="_blank" rel="noopener">新しいタブで開く ↗</a></div>` +
+      `<iframe src="${doc.path}" title="${escapeHtml(doc.title)}"></iframe>`;
+    return;
+  }
+
+  content.className = "state-msg";
+  content.textContent = "読み込み中...";
   try {
     const res = await fetch(doc.path);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
